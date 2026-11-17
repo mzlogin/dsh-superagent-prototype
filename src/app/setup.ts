@@ -29,6 +29,10 @@ export class Setup {
   private resolved?: Deployment
   problem?: SetupProblem
   feishuProblem?: SetupProblem
+  /** Deployments resolved for GitHub instances beyond the first, keyed by instance id. */
+  private readonly deployments = new Map<string, Deployment>()
+  /** Problems of individual Source instances: the GitHub account is shared, each repository is checked on its own. */
+  readonly problems: Record<string, SetupProblem> = {}
   /** PATH with the worker shim directory removed so the host's own CLI calls invoke the real binaries. */
   private readonly path: string
   /** Environment variables pointing agent subprocesses at the isolated git config and command shims. */
@@ -44,9 +48,13 @@ export class Setup {
     if (!this.resolved) throw new Error(`dsh-superagent is waiting for setup: ${this.problem?.detail ?? 'setup has not run'}`)
     return this.resolved
   }
+  /** The deployment of one Source instance: the shared account, with that instance's repository. */
+  deploymentFor(id: string): Deployment { return this.deployments.get(id) ?? this.deployment }
   configured(): boolean { return this.resolved !== undefined }
   /** Resolve deployment accounts and apply the worker environment, recording `SetupError` failures in `problem`/`feishuProblem` and rethrowing unexpected errors. */
   async run(settings: Settings): Promise<boolean> {
+    this.deployments.clear()
+    for (const key of Object.keys(this.problems)) delete this.problems[key]
     try { this.resolved = await this.resolve(settings); return true }
     catch (error) {
       if (!(error instanceof SetupError)) throw error
@@ -81,9 +89,19 @@ export class Setup {
   private async resolve(settings: Settings): Promise<Deployment> {
     const { context, machine, lifetime } = this.host
     const probe = this.probe()
-    // The first GitHub instance carries the repository the worker environment is written for; later instances reuse it.
-    const github = sourceIdsOf(settings, 'github').find(id => String((settings.sources[id]?.config as Record<string, unknown> | undefined)?.repository ?? '') !== '')
-    const deployment = await resolveDeployment(machine, github ? settings.sources[github]?.config : undefined, probe)
+    // The first configured GitHub instance carries the repository the worker environment is written for; every other
+    // instance is checked on its own and its failure stays on that instance.
+    const configured = sourceIdsOf(settings, 'github').filter(id => String((settings.sources[id]?.config as Record<string, unknown> | undefined)?.repository ?? '') !== '')
+    const primary = configured[0]
+    const deployment = await resolveDeployment(machine, primary ? settings.sources[primary]?.config : undefined, probe)
+    this.deployments.set(primary ?? 'github', deployment)
+    for (const id of configured.slice(1)) {
+      try { this.deployments.set(id, await resolveDeployment(machine, settings.sources[id]?.config, probe)) }
+      catch (error) {
+        if (!(error instanceof SetupError)) throw error
+        this.problems[id] = error.problem
+      }
+    }
     const feishu = await resolveFeishuBot(machine, settings.sources.feishu?.config, probe).catch((error: unknown) => {
       if (!(error instanceof SetupError)) throw error
       this.feishuProblem = error.problem
