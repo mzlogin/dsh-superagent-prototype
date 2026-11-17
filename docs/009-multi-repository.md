@@ -54,11 +54,13 @@ Everything that is keyed by a Source is keyed by the instance id from then on:
 Every instance uses the same rule, including the first one. A profile created
 before this change stores its single repository as `github`, so a schema 12
 migration renames that instance to `github-<owner>-<repo>` in one transaction:
-settings and their stored versions, the Policy, Thread keys and their
-`correlated`/`context` references, `trigger`/`trigger_thread`, `decision`,
-`ticket` Mandates and bases, the Outbox, and the `github-*` KV keys (cursors,
-retries, streams, CI revisions). A profile with no repository configured keeps
-`github` until its first save assigns the derived id.
+the current settings snapshot (the Policy is part of it), Thread keys and their
+`correlated` references, `trigger`/`trigger_thread`, `decision`, `ticket`
+Channels and Mandates, the Outbox, and the `github-*` KV keys (cursors,
+retries, streams, CI revisions). Stored settings *versions* keep the old id, so
+the history view may show that Source as not installed for revisions saved
+before the upgrade. A profile with no repository configured keeps `github`
+until its first save assigns the derived id.
 
 ## Configuration
 
