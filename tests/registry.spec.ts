@@ -159,4 +159,25 @@ describe('Source registry', () => {
     expect(await sources.send(reply, commands)).toBe('sent')
     expect(run.mock.calls[0]![1]).toEqual(expect.arrayContaining(['+messages-reply', '--message-id', 'om_dm']))
   })
+  it('registers several instances of one kind, each with its own config and health entry', () => {
+    const kind: SourceKind<{ interval: number }> = { ...probe, health: ['probe'] }
+    const settings = SettingsSchema.parse({ sources: {
+      probe: { enabled: true, config: { interval: 3 } },
+      'probe-second': { enabled: false, config: { interval: 8 } },
+    } })
+    const sources = new SourceRegistry(() => settings)
+    sources.register(kind)
+    sources.register(kind, 'probe-second')
+    expect(sources.kindOf('probe-second')?.kind).toBe('probe')
+    expect(sources.kindOf('probe-third')?.kind).toBe('probe')
+    expect(sources.kindOf('other')?.kind).toBeUndefined()
+    expect(sources.instance<{ interval: number }>('probe-second')?.config.interval).toBe(8)
+    expect(sources.instances().map(instance => [instance.id, instance.kind, instance.enabled])).toEqual([
+      ['probe', 'probe', true],
+      ['probe-second', 'probe', false],
+    ])
+    expect([...sources.healthEntries(['probe']).keys()]).toEqual(['probe'])
+    expect([...sources.healthEntries(['probe-second']).keys()]).toEqual(['probe-second'])
+    expect(() => sources.register(kind, 'probe-second')).toThrow('already registered')
+  })
 })
