@@ -8,7 +8,7 @@ Use this guide to install, configure and operate dsh-superagent. It covers accou
 - **An agent GitHub account.** The agent comments, pushes branches and opens pull requests as this account, through a GitHub CLI signed in only as that account.
 - **Optional:** a Feishu bot for chat requests.
 
-Plugin configuration holds the state directory and machine limits. Use the panel for everything else: Sources for the repository and accounts, Policy for allowed lists, and Execution for worker directories and commands.
+Plugin configuration holds the state directory and machine limits. Use the panel for everything else: Sources for the repositories and accounts, Policy for allowed lists, and Execution for worker directories and commands. A deployment watches one or more GitHub repositories; each is its own Source instance (see [Several repositories](#several-repositories)).
 
 ### Permissions and isolation
 
@@ -30,7 +30,7 @@ Both presets run with `danger-full-access` as the operator's OS user and read me
 
 ### Agent GitHub account
 
-1. Create a GitHub user account for the agent and give it write access to the repository. A GitHub App cannot be the agent, because dsh-superagent reads the account's notifications.
+1. Create a GitHub user account for the agent and give it write access to every repository it watches. A GitHub App cannot be the agent, because dsh-superagent reads the account's notifications.
 2. Give it a GitHub CLI that uses only its own credentials:
 
    ```sh
@@ -85,6 +85,8 @@ The pinned version above is public; other versions must satisfy `engines.dsh` in
 The fourth command creates `~/.dsh/profiles/superagent` from the DeepSeek Harness Web template. The fifth installs this bundle. Set `DSH_HOME` to relocate the default `~/.dsh` directory.
 
 Run the profile-creation command only for a new installation. If the profile already exists, that command replaces it and deletes its `cordis.patch.yml`, including machine configuration. Do not use it for upgrades.
+
+A profile installed by an earlier, single-repository build is upgraded in place: on its first start the schema 12 migration renames the `github` Source instance to `github-<owner>-<repo>`. Back up the state directory first (see Upgrade). The panel then lists that repository like any other and can add more.
 
 ## Machine configuration
 
@@ -146,15 +148,30 @@ Setup must succeed before polling or work starts. Overview lists missing require
 
 1. **Sources.** Set the GitHub repository (`owner/name`) and agent CLI, for example `/home/me/.local/bin/gh-agent`. Requests normally arrive through the agent account's notifications. A new Issue or comment mentioning the account arrives on the next poll; adding a mention by editing an existing Issue body does not. Post a new comment instead. For Feishu, set the bot CLI, chats, each chat's receive-all or mentions-only mode, and whether to receive direct messages.
 2. **Policy.** The two example rules can be edited or removed. Under **On each Source**, add the GitHub accounts and Feishu users who may ask for work; until a list has someone, no request can become a Ticket. With Feishu, a chat can be chosen to sync the list from, at startup and on **Sync now**.
-3. **Execution.** The directory root and a prepare command. To give each Ticket a checkout of the repository:
+3. **Execution.** The directory root and a prepare command. To give each Ticket a checkout of its repository, choose the clone by `DSH_SUPERAGENT_GITHUB_REPOSITORY`:
 
    ```sh
-   git -C /home/me/src/widgets fetch --no-tags "https://github.com/$DSH_SUPERAGENT_GITHUB_REPOSITORY.git" "${DSH_SUPERAGENT_GITHUB_PR_HEAD:-HEAD}:refs/dsh-superagent/$DSH_SUPERAGENT_TICKET" &&
-   git -C /home/me/src/widgets worktree add -b "agent/$DSH_SUPERAGENT_NAME" "$DSH_SUPERAGENT_DIR" "refs/dsh-superagent/$DSH_SUPERAGENT_TICKET"
+   repo=""
+   case "$DSH_SUPERAGENT_GITHUB_REPOSITORY" in
+     acme/widgets) repo=/home/me/src/widgets ;;
+     acme/gadgets) repo=/home/me/src/gadgets ;;
+   esac
+   [ -n "$repo" ] || { echo "No local clone for $DSH_SUPERAGENT_GITHUB_REPOSITORY" >&2; exit 1; }
+   git -C "$repo" fetch --no-tags "https://github.com/$DSH_SUPERAGENT_GITHUB_REPOSITORY.git" "${DSH_SUPERAGENT_GITHUB_PR_HEAD:-HEAD}:refs/dsh-superagent/$DSH_SUPERAGENT_TICKET" &&
+   git -C "$repo" worktree add -b "agent/$DSH_SUPERAGENT_NAME" "$DSH_SUPERAGENT_DIR" "refs/dsh-superagent/$DSH_SUPERAGENT_TICKET"
    ```
 
-   List personal CLIs, such as one signed in to your own account, as blocked commands.
+   With one repository the case has one branch. List personal CLIs, such as one signed in to your own account, as blocked commands.
 4. **Prompts.** Set the team sections: the GitHub disclosure line, review bots, the commit author and the auto-merge condition.
+
+### Several repositories
+
+Every GitHub repository is a Source instance with its own instance id, `github-<owner>-<repo>` (lowercase; anything else becomes `-`, at most 64 characters). A profile that watched one repository before the multi-repository build migrates that instance on its first start: its settings, Policy, Threads, Triggers, Tickets, Outbox and read cursors are renamed in one transaction. Stored settings versions keep the old id. Back up the state directory before upgrading.
+
+- **Add** a repository with **Add repository** at the bottom of Sources: enter `owner/name`. The agent CLI is copied from the first GitHub instance. The id is derived from the name; adding the same repository twice is refused.
+- **Remove** one with **Remove** on its card. Its settings and Policy part go away; its Threads, Tickets and Sessions stay, and it stops polling.
+- Each instance has its own allowed list, read cursors, Threads (`<instance id>:<number>`) and health entry (`<instance id>`), so two repositories never share an id.
+- Setup checks every repository on its own. A repository the agent cannot push to records a problem on that instance only: its Source pauses while the others keep polling (`setup.problems` in `GET state`).
 
 ### Management API
 
@@ -199,10 +216,12 @@ A refusal has a status and `error`, its English text:
 
 The blocks:
 
-- `source:github`, `source:feishu`: `{"enabled": true, "config": {…}}`. GitHub's config has `repository` and `cli`, and the switches `observeIssues`, `observePulls`, `observeComments` and `observeCi`, off by default, which receive every new Issue, new pull request and comment in the repository and the default branch's CI; Feishu's has `cli`, `chats` as `[{"chatId": "oc_…", "name": "…", "listen": "mentions"}]` (or `"all"`), `directMessages`, and `otherChats` as `"none"` or `"mentions"`.
-- `policy`: `{"rules": […], "sources": {"github": {"allowed": [{"id": "<login>"}], "bots": [{"id": "dependabot[bot]"}]}, "feishu": {"allowed": [{"id": "ou_…", "name": "…"}], "syncChat": "oc_…", "admission": {"oc_…": {"unlistedAddressed": "explicit"}}}}}`. `bots` lists the bots whose messages may become inferred candidates. An `admission` row is keyed by chat id, `other` or `direct` for Feishu, and by `issues`, `pulls`, `comments` or `ci` for GitHub; an unset cell takes its default (see [002 Authorization](002-authorization.md)).
+- `source:github-<owner>-<repo>`, `source:feishu` (and `source:github` on a profile that never migrated): `{"enabled": true, "config": {…}}`. GitHub's config has `repository` and `cli`, and the switches `observeIssues`, `observePulls`, `observeComments` and `observeCi`, off by default, which receive every new Issue, new pull request and comment in the repository and the default branch's CI; Feishu's has `cli`, `chats` as `[{"chatId": "oc_…", "name": "…", "listen": "mentions"}]` (or `"all"`), `directMessages`, and `otherChats` as `"none"` or `"mentions"`.
+- `policy`: `{"rules": […], "sources": {"github-<owner>-<repo>": {"allowed": [{"id": "<login>"}], "bots": [{"id": "dependabot[bot]"}]}, "feishu": {"allowed": [{"id": "ou_…", "name": "…"}], "syncChat": "oc_…", "admission": {"oc_…": {"unlistedAddressed": "explicit"}}}}}`. `bots` lists the bots whose messages may become inferred candidates. An `admission` row is keyed by chat id, `other` or `direct` for Feishu, and by `issues`, `pulls`, `comments` or `ci` for GitHub; an unset cell takes its default (see [002 Authorization](002-authorization.md)).
 - `eval`: `mode`, `timeoutSeconds` and `model`.
 - `executor`: `model`, `maxWorkers`, `directory`, `prepare` and `blockedCommands`. The processing pause is a setting of its own, `paused`, which `POST executor/pause` sets.
+
+`PUT settings/source:<id>` also creates a Source instance that does not exist yet (revision `0`), and `DELETE settings/source:<id>` removes one with its Policy part.
 
 Changing a repository or CLI runs the corresponding setup check first. A failed check returns 400 with details in `setup`. A successful account change, or any save while setup is pending, returns `restarting: true`. The API is temporarily unavailable while the application restarts.
 
@@ -228,14 +247,14 @@ A file in `worker-bin` or `worker-gitconfig` that dsh-superagent did not write s
 
 ## Try it
 
-From an allowed GitHub account, open an Issue or post a comment containing `@<agent login> <request>`. Within a polling interval (one minute by default), Overview should show a Ticket. The agent acknowledges the request, works in its own Session and directory, and delivers in the original conversation. For Feishu, mention the bot in a configured chat.
+From an allowed GitHub account, open an Issue or post a comment containing `@<agent login> <request>` in any repository the deployment watches. Within a polling interval (one minute by default), Overview should show a Ticket. The agent acknowledges the request, works in its own Session and directory, and delivers in the original conversation. For Feishu, mention the bot in a configured chat.
 
 ## Upgrade
 
 1. Wait until no Executor is in the middle of a turn.
-2. Back up `<stateDir>/orchestrator.sqlite`.
+2. Back up `<stateDir>/orchestrator.sqlite` (copy it, or the whole state directory, together with the profile's `package.json` and `cordis.patch.yml`).
 3. Run `git pull && pnpm install && pnpm build`.
-4. Run `scripts/dsh-superagent restart` and inspect its status.
+4. Run `scripts/dsh-superagent restart` and inspect its status. A release that changes the database schema migrates it on start, so the backup is the only rollback for the data.
 
 A restart ends running Assignments and starts replacements with recovery notes. Team text and overridden prompt parts are retained; parts without overrides follow the new defaults. Review parts marked **Default updated** after upgrading.
 
@@ -256,6 +275,7 @@ Setup problems appear on the overview with a link to the fix, in the panel's lan
 | `The agent GitHub CLI cannot read its account` | Sign the wrapper in with `auth login` |
 | `@… cannot read …` or `@… cannot push to …` | Give the agent account write access to the repository |
 | `The GitHub Source names no repository.` | Set the repository, `owner/name`, on the GitHub card |
+| A setup problem names one repository (`GET state` → `setup.problems`) | Fix that repository (write access, CLI) on its card; the other Sources keep polling |
 | A Ticket fails with `The prepare command failed: …` | The output names the cause, such as a wrong clone path; fix the command, then retry the Ticket |
 | `git does not read the github.com credential configuration dsh-superagent writes` | Install git 2.32 or later |
 | A Ticket fails with `The git configuration of the repository in … sets …` | Remove the named credential or `http.*.extraheader` settings from the clone's `.git/config` |

@@ -106,8 +106,16 @@ stable handle chosen when the repository is added and does not change when its
 - Every repository has its own allowed list and admission table.
 - Every repository uses the same agent account (one `gh-agent`).
 
+## Status
+
+Implemented on `feat/multi-repository`: the schema 12 migration, instance-keyed
+registry and settings, one polling loop per instance, per-instance setup
+problems, and Add/Remove on the Sources page. The committed design is the one
+shipped.
+
 ## Out of scope
 
 - Several Feishu bots, or a different agent account per repository.
 - Moving Tickets between instances.
+- Editing the instance id after it is created.
 

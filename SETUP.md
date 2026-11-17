@@ -35,7 +35,7 @@ Ask in this order, one per message, following the flow of work in [docs/001-doma
 **Sources: where requests come from.**
 
 1. **Sources.** Should the agent take requests from GitHub only, or also from Feishu chats? [GitHub only, unless the team works in Feishu.]
-2. **Repository.** Which github.com repository should the agent work on, as `owner/name`?
+2. **Repository.** Which github.com repository should the agent work on first, as `owner/name`? More can be added later from the panel's **Add repository**; each needs the agent account's write access and its own local clone.
 3. **Agent account.** Which GitHub user account will the agent act as? [A dedicated account, never the operator's own: everything the agent writes appears under this name.] It may not exist yet; creating it is an operator step.
 4. With Feishu: **which chats,** by name? The agent looks up their ids after the bot is configured.
 
@@ -74,6 +74,6 @@ Send one message, under 300 words: what will be installed, the accounts and CLIs
 `scripts/dsh-superagent status` exits 0 with no setup problem. If you run in the operator's own DSH profile, create the hourly check of the Hourly check section of `docs/006-deployment.md` with your schedule tool; otherwise give the operator its prompt to schedule there. Then send one message, under 300 words:
 
 - The panel URL, and that the **Superagent** entry in the sidebar is where to look.
-- How to try it: from an account on the allowed list, comment `@<agent login> <request>` on an issue in the repository. A Ticket appears on the overview within about a minute.
+- How to try it: from an account on the allowed list, comment `@<agent login> <request>` on an issue in one of the repositories. A Ticket appears on the overview within about a minute. Add another repository with **Add repository** on the Sources page; give its clone a branch in the prepare command.
 - Three rules for the operator, from the Responsibility section of `docs/000-philosophy.md`: start narrow, tune for less noise, own what the agent says.
 - Where to read more: the numbered documents in `docs/`, in order.
