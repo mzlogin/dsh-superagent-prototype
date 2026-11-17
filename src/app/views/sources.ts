@@ -3,7 +3,7 @@ import { threadKey } from '../../core/index.ts'
 import type { Deployment } from '../../deployment.ts'
 import type { Health } from '../../sources/host.ts'
 import type { SourceInstance } from '../../sources/kind.ts'
-import type { SourceRegistry } from '../../sources/registry.ts'
+import { instanceHealthNames, type SourceRegistry } from '../../sources/registry.ts'
 import type { SetupProblem } from '../../setup.ts'
 import { dayAgo, snapshot, type ViewHost } from './records.ts'
 import { preview } from './text.ts'
@@ -13,7 +13,7 @@ export type HealthMap = Record<string, Health>
 export function sourceHealth(sources: SourceRegistry, instance: SourceInstance, health: HealthMap) {
   const kind = sources.kind(instance.kind)
   const starting: Health = { state: 'starting', detail: '' }
-  const parts = (kind?.health ?? []).map(name => {
+  const parts = (kind ? instanceHealthNames(kind, instance.id) : []).map(name => {
     const entry = health[name]
     return { name, ...(!entry || (instance.enabled && entry.code === 'sourceOff') ? starting : entry) }
   })
@@ -26,8 +26,11 @@ export interface SetupState {
   problem?: SetupProblem | undefined
   /** Feishu bot check failure that pauses only the Feishu Source. */
   feishuProblem?: SetupProblem | undefined
+  /** Problems of individual Source instances, keyed by instance id. */
+  problems?: Readonly<Record<string, SetupProblem>> | undefined
 }
-export const problemOf = (id: string, setup: SetupState) => [setup.problem, setup.feishuProblem].find(problem => problem?.place === id)
+export const problemOf = (id: string, setup: SetupState) =>
+  setup.problems?.[id] ?? [setup.problem, setup.feishuProblem].find(problem => problem?.place === id)
 /** Source lifecycle state in priority order: missing kind, disabled, setup/part error, blocked on global setup, starting, paused, or ready. */
 export type SourceState = 'missing' | 'off' | 'error' | 'setup' | 'starting' | 'paused' | 'ready'
 function sourceState(instance: SourceInstance & { installed: boolean }, parts: { state: string }[], setup: SetupState): SourceState {

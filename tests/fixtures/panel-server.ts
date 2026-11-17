@@ -72,7 +72,7 @@ export const promptVersion = (revision: number, config: PromptsView['current']['
 export const droppedReply = (id: string, hoursAgo: number, source: 'feishu' | 'github', reason: DroppedReply['dropped']['reason'],
   { ticket, thread }: { ticket?: DroppedReply['ticket']; thread?: false } = {}): DroppedReply => ({
   id, preview: `Reply ${id}`, kind: 'reply',
-  channel: source === 'feishu' ? feishuChannel('oc_1', 'om_root') : githubChannel(42),
+  channel: source === 'feishu' ? feishuChannel('oc_1', 'om_root') : githubChannel('github', 42),
   dropped: { at: new Date(Date.now() - hoursAgo * 3_600_000).toISOString(), reason }, ...ticket ? { ticket } : {},
   ...thread === false ? {} : { thread: source === 'feishu' ? 'feishu:oc_1:om_root' : 'github:42' },
 })
@@ -248,7 +248,7 @@ function initial(): PanelServer {
   const defaults = { revision: 0, previousRevision: null, savedAt: '', source: 'defaults' }
   return {
     health: {}, down: false, pending: 0, opened: [], requests: [], misuse: [], queued: new Set(), dropped: [], failing: [],
-    setup: { machine: MACHINE, problem: null, feishuProblem: null,
+    setup: { machine: MACHINE, problem: null, feishuProblem: null, problems: {},
       accounts: { repository: 'acme/widgets', agent: 'agent-bot', feishu: { appId: 'cli_bot', brand: 'feishu', botId: 'ou_bot',
         name: 'Widgets Bot' } } },
     settings, revisions: { policy: 3, eval: 1, executor: 0 },
@@ -365,6 +365,15 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
     }
     server.revisions[block] = (server.revisions[block] ?? 0) + 1
     return { restarting, revision: server.revisions[block] }
+  } },
+  'DELETE settings/:block': { answer: ({ params: { block } }) => {
+    if (!block.startsWith('source:')) return refuse(400, 'Only a Source settings block can be removed')
+    const id = block.slice('source:'.length)
+    if (!(id in server.settings.sources)) return refuse(404, 'Source not found')
+    const { [id]: _removed, ...left } = server.settings.sources
+    const { [id]: _part, ...leftPolicy } = server.settings.policy.sources
+    server.settings = { ...server.settings, sources: left, policy: { ...server.settings.policy, sources: leftPolicy } }
+    return { removed: true, restarting: false }
   } },
   'GET policy/history': { answer: () => server.history },
   'POST policy-sync/:id': { answer: ({ params }) => ({ policy: server.settings.policy.sources[params.id] }) },

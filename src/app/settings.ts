@@ -54,7 +54,7 @@ const BLOCKS: Record<'policy' | 'eval' | 'executor' | 'source', Block> = {
 
 /** Host dependencies used by `Settings`. */
 export interface SettingsHost {
-  readonly store: Pick<Store, 'settings' | 'saveSettings' | 'blockRevision' | 'atomic' | 'tickets' | 'get'>
+  readonly store: Pick<Store, 'settings' | 'saveSettings' | 'blockRevision' | 'atomic' | 'tickets' | 'get' | 'delete'>
   readonly sources: SourceRegistry
   /** Notified when a settings save changes the policy version. */
   readonly engine: EngineForSettings
@@ -153,7 +153,7 @@ export class Settings {
     const kind = block.startsWith('source:') ? 'source' : block
     if (!(kind in BLOCKS)) throw new UserError('unknownBlock', { block })
     const rules = BLOCKS[kind as keyof typeof BLOCKS]
-    if (kind === 'source' && !sources.kind(id)) throw new UserError('sourceNotInstalled', { source: id })
+    if (kind === 'source' && !sources.kindOf(id)) throw new UserError('sourceNotInstalled', { source: id })
     const parsed = rules.parse(value, sources, id)
     const current = store.settings()
     const candidate = rules.merge(current, parsed, id)
@@ -193,6 +193,36 @@ export class Settings {
     if (restarting) this.host.setup.restart()
     else this.host.requestPass()
     return { saved: true, revision: store.blockRevision(block), policy_changed: before !== after, restarting, context_delivery: delivery }
+  }
+  /**
+   * Removes one Source instance, with its Policy part, as the Source settings page does. The plugin stops polling the
+   * instance on its next reconciliation; a removal that changes a setup field restarts dsh-superagent.
+   */
+  async removeSource(id: string, origin: SettingsOrigin): Promise<{ removed: boolean; restarting: boolean }> {
+    const { store, engine, sessions, sources } = this.host
+    if (!sources.kindOf(id)) throw new UserError('sourceNotInstalled', { source: id })
+    const old = store.settings()
+    if (!(id in old.sources)) throw new UserError('sourceNotInstalled', { source: id })
+    const { [id]: _removed, ...left } = old.sources
+    const { [id]: _part, ...leftPolicy } = old.policy.sources
+    const settings = SettingsSchema.parse({ ...old, sources: left, policy: { ...old.policy, sources: leftPolicy } })
+    const restarting = setupChanged(old, settings)
+    const before = policyVersion(old), after = policyVersion(settings)
+    const scope = (version: SettingsValue) => ({
+      scope: (input: { source: string; meta: Record<string, unknown> }) => this.host.sources.scope(input, version) })
+    const effects = before === after ? new Map() : policyEffects(store.tickets.open(), old, settings, scope)
+    const notified = [...effects.keys()]
+    const block = `source:${id}` as SettingsSave
+    store.atomic(() => {
+      store.saveSettings(settings, { source: origin, block, policyVersion: after, policyChanged: before !== after, notified })
+      store.delete(KV.settings.block(block))
+      if (origin !== 'tool') sessions.notify(...settingsNotice(block, ['sources']))
+      if (before !== after) engine.policyChanged(before, after, effects)
+    })
+    const delivery = restarting ? 'pending' : await sessions.delivery(`settings:${block}`)
+    if (restarting) this.host.setup.restart()
+    else this.host.requestPass()
+    return { removed: true, restarting }
   }
   /**
    * Pauses or resumes processing (new evaluations, worker dispatch, and channel delivery, while Sources continue recording

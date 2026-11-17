@@ -13,8 +13,12 @@ export interface SetupHost {
   restart(): void
 }
 
+/** Settings keys that belong to `kind`, including the numbered instances a GitHub Source may have. */
+export const sourceIdsOf = (settings: Settings, kind: string): string[] =>
+  Object.keys(settings.sources).filter(id => id === kind || id.startsWith(`${kind}-`)).sort()
 const setupFields = (settings: Settings) =>
-  JSON.stringify(Object.entries(SETUP_FIELDS).map(([id, keys]) => keys.map(key => settings.sources[id]?.config[key] ?? '')))
+  JSON.stringify(Object.entries(SETUP_FIELDS).flatMap(([kind, keys]) =>
+    sourceIdsOf(settings, kind).map(id => [id, ...keys.map(key => settings.sources[id]?.config[key] ?? '')])))
 export const setupChanged = (before: Settings, after: Settings): boolean => setupFields(before) !== setupFields(after)
 
 /**
@@ -25,6 +29,10 @@ export class Setup {
   private resolved?: Deployment
   problem?: SetupProblem
   feishuProblem?: SetupProblem
+  /** Deployments resolved for GitHub instances beyond the first, keyed by instance id. */
+  private readonly deployments = new Map<string, Deployment>()
+  /** Problems of individual Source instances: the GitHub account is shared, each repository is checked on its own. */
+  readonly problems: Record<string, SetupProblem> = {}
   /** PATH with the worker shim directory removed so the host's own CLI calls invoke the real binaries. */
   private readonly path: string
   /** Environment variables pointing agent subprocesses at the isolated git config and command shims. */
@@ -40,9 +48,13 @@ export class Setup {
     if (!this.resolved) throw new Error(`dsh-superagent is waiting for setup: ${this.problem?.detail ?? 'setup has not run'}`)
     return this.resolved
   }
+  /** The deployment of one Source instance: the shared account, with that instance's repository. */
+  deploymentFor(id: string): Deployment { return this.deployments.get(id) ?? this.deployment }
   configured(): boolean { return this.resolved !== undefined }
   /** Resolve deployment accounts and apply the worker environment, recording `SetupError` failures in `problem`/`feishuProblem` and rethrowing unexpected errors. */
   async run(settings: Settings): Promise<boolean> {
+    this.deployments.clear()
+    for (const key of Object.keys(this.problems)) delete this.problems[key]
     try { this.resolved = await this.resolve(settings); return true }
     catch (error) {
       if (!(error instanceof SetupError)) throw error
@@ -60,8 +72,9 @@ export class Setup {
   /** Verify account CLIs for a modified source block before saving, ignoring setup errors belonging to other blocks. */
   async checkAccounts(block: SettingsBlock, settings: Settings): Promise<void> {
     const { machine } = this.host
-    const check = block === 'source:feishu' ? resolveFeishuBot(machine, settings.sources.feishu?.config, this.probe())
-      : resolveDeployment(machine, settings.sources.github?.config, this.probe())
+    const id = block.slice('source:'.length)
+    const check = block === 'source:feishu' ? resolveFeishuBot(machine, settings.sources[id]?.config, this.probe())
+      : resolveDeployment(machine, settings.sources[id]?.config, this.probe())
     await check.catch((error: unknown) => { if (!(error instanceof SetupError) || error.place === block.slice(7)) throw error })
   }
   async blockCommands(blocked: readonly string[]): Promise<void> {
@@ -76,7 +89,19 @@ export class Setup {
   private async resolve(settings: Settings): Promise<Deployment> {
     const { context, machine, lifetime } = this.host
     const probe = this.probe()
-    const deployment = await resolveDeployment(machine, settings.sources.github?.config, probe)
+    // The first configured GitHub instance carries the repository the worker environment is written for; every other
+    // instance is checked on its own and its failure stays on that instance.
+    const configured = sourceIdsOf(settings, 'github').filter(id => String((settings.sources[id]?.config as Record<string, unknown> | undefined)?.repository ?? '') !== '')
+    const primary = configured[0]
+    const deployment = await resolveDeployment(machine, primary ? settings.sources[primary]?.config : undefined, probe)
+    this.deployments.set(primary ?? 'github', deployment)
+    for (const id of configured.slice(1)) {
+      try { this.deployments.set(id, await resolveDeployment(machine, settings.sources[id]?.config, probe)) }
+      catch (error) {
+        if (!(error instanceof SetupError)) throw error
+        this.problems[id] = error.problem
+      }
+    }
     const feishu = await resolveFeishuBot(machine, settings.sources.feishu?.config, probe).catch((error: unknown) => {
       if (!(error instanceof SetupError)) throw error
       this.feishuProblem = error.problem

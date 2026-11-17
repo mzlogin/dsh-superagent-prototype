@@ -43,7 +43,8 @@ function host(overrides: Partial<SourceContextDeps> = {}) {
     ready: Promise.resolve(), configured: () => true, receive, ...overrides }
   // The Sources' functions take the context; plugin entries and kind callbacks take the host, which builds each kind's context.
   const value = { ...parts, context: (kind: { kind: string; health: readonly string[] }) => sourceContextOf(parts, kind) }
-  const context = sourceContextOf(parts, { kind: 'feishu', health: ['github', 'feishu', 'history'] })
+  // One context serves both Sources here; its id is the GitHub instance the tests act on.
+  const context = { ...sourceContextOf(parts, { kind: 'feishu', health: ['github', 'feishu', 'history'] }), id: 'github' }
   const health = overrides.sources ? healthOf.get(overrides.sources)!.all : board.all
   return { ...value, ...context, health, store, engine, commands: parts.commands, receive, executor }
 }
@@ -326,20 +327,20 @@ describe('feishu source', () => {
 })
 describe('github source', () => {
   it('normalizes comments and reviews into triggers with review-thread channels, and marks only GitHub Apps and machine accounts as automated', () => {
-    const trigger = commentTrigger({ id: 5, body: 'nit', user: { login: 'review-bot[bot]', type: 'Bot' }, html_url: 'https://github.com/acme/widgets/pull/7#discussion_r5', updated_at: '2026-09-01T00:00:00Z' }, { number: 7, isPr: true, prAuthor: 'agent-bot' }, 'inline', 'agent-bot')
+    const trigger = commentTrigger('github', { id: 5, body: 'nit', user: { login: 'review-bot[bot]', type: 'Bot' }, html_url: 'https://github.com/acme/widgets/pull/7#discussion_r5', updated_at: '2026-09-01T00:00:00Z' }, { number: 7, isPr: true, prAuthor: 'agent-bot' }, 'inline', 'agent-bot')
     expect(trigger).toMatchObject({ source: 'github', threads: [{ source: 'github', id: '7' }], human: false, channel: { address: { number: '7', url: 'https://github.com/acme/widgets/pull/7#discussion_r5' } }, meta: { commentId: 5, kind: 'inline', prAuthor: 'agent-bot' } })
     // A review bot on an ordinary account counts as a person here; the prompts name it as automated.
-    expect(commentTrigger({ id: 6, body: 'x', user: { login: 'review-bot', type: 'User' } }, { number: 7, isPr: false }, 'conversation', 'agent-bot').human).toBe(true)
-    expect(commentTrigger({ id: 7, body: 'x', user: { login: 'ci[bot]', type: 'Bot' } }, { number: 7, isPr: false }, 'conversation', 'agent-bot').human).toBe(false)
+    expect(commentTrigger('github', { id: 6, body: 'x', user: { login: 'review-bot', type: 'User' } }, { number: 7, isPr: false }, 'conversation', 'agent-bot').human).toBe(true)
+    expect(commentTrigger('github', { id: 7, body: 'x', user: { login: 'ci[bot]', type: 'Bot' } }, { number: 7, isPr: false }, 'conversation', 'agent-bot').human).toBe(false)
     // A review decision reaches the ticket even without a body; a plain review comment carries only its body.
-    const review = (fields: Partial<GithubComment>) => commentTrigger({ id: 8, user: { login: 'carol', type: 'User' }, submitted_at: '2026-09-01T00:00:00Z', ...fields }, { number: 7, isPr: true }, 'review', 'agent-bot').text
+    const review = (fields: Partial<GithubComment>) => commentTrigger('github', { id: 8, user: { login: 'carol', type: 'User' }, submitted_at: '2026-09-01T00:00:00Z', ...fields }, { number: 7, isPr: true }, 'review', 'agent-bot').text
     expect(review({ state: 'APPROVED', commit_id: 'abc123' })).toBe('APPROVED review of commit abc123')
     expect(review({ state: 'CHANGES_REQUESTED', commit_id: 'abc123', body: 'Keep the margin' })).toBe('CHANGES_REQUESTED review of commit abc123\n\nKeep the margin')
     expect(review({ state: 'COMMENTED', commit_id: 'abc123' })).toBe('')
     // A mention of the agent addresses it, whatever the case; the agent's own messages are automated.
-    expect(commentTrigger({ id: 9, body: '@Agent-Bot please fix', user: { login: 'alice', type: 'User' } }, { number: 7, isPr: true }, 'conversation', 'agent-bot')).toMatchObject({ human: true, addressed: 'mention' })
-    expect(commentTrigger({ id: 10, body: 'mail@agent-bot.example', user: { login: 'alice', type: 'User' } }, { number: 7, isPr: true }, 'conversation', 'agent-bot')).not.toHaveProperty('addressed')
-    expect(commentTrigger({ id: 11, body: 'pushed', user: { login: 'Agent-Bot', type: 'User' } }, { number: 7, isPr: true }, 'conversation', 'agent-bot').human).toBe(false)
+    expect(commentTrigger('github', { id: 9, body: '@Agent-Bot please fix', user: { login: 'alice', type: 'User' } }, { number: 7, isPr: true }, 'conversation', 'agent-bot')).toMatchObject({ human: true, addressed: 'mention' })
+    expect(commentTrigger('github', { id: 10, body: 'mail@agent-bot.example', user: { login: 'alice', type: 'User' } }, { number: 7, isPr: true }, 'conversation', 'agent-bot')).not.toHaveProperty('addressed')
+    expect(commentTrigger('github', { id: 11, body: 'pushed', user: { login: 'Agent-Bot', type: 'User' } }, { number: 7, isPr: true }, 'conversation', 'agent-bot').human).toBe(false)
   })
   it('reads the address of an Issue, a PR or a review comment of the repository, and nothing else', () => {
     expect(githubAddress('https://api.github.com/repos/acme/widgets/pulls/9', 'acme/widgets')).toEqual({ number: 9, pr: true })
@@ -369,7 +370,7 @@ describe('github source', () => {
     const comment: GithubComment = { id: 5, body: 'Use the theme token', user: { login: 'carol', type: 'User' }, path: 'src/render.ts', line: 43,
       diff_hunk: '@@ -40,6 +40,8 @@\n   const title = view.title\n   const margin = 12\n+  const padding = 8', in_reply_to_id: 4,
       html_url: 'https://github.com/acme/widgets/pull/9#discussion_r5', created_at: '2026-09-09T00:00:00Z' }
-    const trigger = commentTrigger(comment, { number: 9, isPr: true }, 'inline', 'agent-bot')
+    const trigger = commentTrigger('github', comment, { number: 9, isPr: true }, 'inline', 'agent-bot')
     expect(trigger.text).toBe('src/render.ts:43\n   const title = view.title\n   const margin = 12\n+  const padding = 8\n\nUse the theme token')
     expect(trigger.meta).toMatchObject({ path: 'src/render.ts', line: 43, inReplyTo: 4, commentId: 5, kind: 'inline' })
   })
@@ -379,7 +380,7 @@ describe('github source', () => {
       line: 43, html_url: `https://github.com/acme/widgets/pull/9#discussion_r${id}`, created_at: `2026-09-09T00:00:0${id}Z`,
       ...reply ? { in_reply_to_id: reply } : {} })
     vi.spyOn(h.commands, 'pages').mockResolvedValue([comment(1), comment(2, 1), comment(3), comment(4, 1)])
-    const trigger = commentTrigger(comment(4, 1), { number: 9, isPr: true }, 'inline', 'agent-bot')
+    const trigger = commentTrigger('github', comment(4, 1), { number: 9, isPr: true }, 'inline', 'agent-bot')
     const context = h.sources.threadContext(trigger)!
     const thread = await context.read(h.commands, 'thread')
     expect(thread).toMatchObject({ status: 'review_thread' })
@@ -460,7 +461,7 @@ describe('github source', () => {
   })
   it('ends a ticket when its own PR merges, though the PR it started from is still open', async () => {
     const h = host()
-    h.store.tickets.save({ id: 't4', title: 'four', decisionId: 'd4', mandate: { strength: 'explicit', policyVersion: '', basis: { via: 'listed' }, actor: { source: 'github', id: 'alice' }, scope: '' }, channels: [githubChannel(30, 'https://github.com/acme/widgets/pull/30#issuecomment-1')], assignments: [{ id: 'a1', state: 'running', createdAt: '2026-09-01T00:00:00Z' }], inputs: [], undelivered: [], execution: execution('fix-4'), origin: { triggerId: 'x', triggerIds: [] }, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' })
+    h.store.tickets.save({ id: 't4', title: 'four', decisionId: 'd4', mandate: { strength: 'explicit', policyVersion: '', basis: { via: 'listed' }, actor: { source: 'github', id: 'alice' }, scope: '' }, channels: [githubChannel('github', 30, 'https://github.com/acme/widgets/pull/30#issuecomment-1')], assignments: [{ id: 'a1', state: 'running', createdAt: '2026-09-01T00:00:00Z' }], inputs: [], undelivered: [], execution: execution('fix-4'), origin: { triggerId: 'x', triggerIds: [] }, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' })
     h.store.threads.save({ key: 'github:30', ref: { source: 'github', id: '30' }, createdAt: '', subscriptions: ['t4'], correlated: [], pending: [], meta: { number: 30, isPr: true } })
     expect(claimPull(h, 't4', agentsPull(31, 'agent/fix-4'))).toBeUndefined()
     expect(await observePull(h, endedPull(31, '2026-09-02T00:00:00Z'))).toBe(true)
@@ -700,7 +701,7 @@ describe('github source', () => {
     github(h, { notifications: [notification(9, 'pulls')], 'pulls/9': pr })
     await pollRound(h)
     const opened = h.receive.mock.calls.map(([trigger]) => trigger).filter(trigger => trigger.meta.kind === 'pull')
-    const id = issueTrigger({ ...pr, id: 9 } as GithubIssue, 'agent-bot').id
+    const id = issueTrigger('github', { ...pr, id: 9 } as GithubIssue, 'agent-bot').id
     expect(opened).toEqual([expect.objectContaining({ id, addressed: 'mention', actor: { source: 'github', id: 'carol' },
       meta: expect.objectContaining({ number: 9, isPr: true, prAuthor: 'carol' }) })])
     // The agent's own PR, and one opened before the cursor, bring no description.
@@ -763,7 +764,7 @@ describe('github source', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
       const start = async (overrides: Partial<SourceContextDeps>,
-        github: { enabled: boolean; config: Record<string, unknown> } = { enabled: true, config: {} }) => {
+        github: { enabled: boolean; config: Record<string, unknown> } = { enabled: true, config: { repository: 'acme/widgets' } }) => {
         const board = new HealthBoard()
         const settings = SettingsSchema.parse({ sources: { github } })
         const sources = new SourceRegistry(() => settings, board)
@@ -786,7 +787,7 @@ describe('github source', () => {
         if (!outcomes[round++]) throw refused(502, 'Bad Gateway')
         return 'HTTP/2.0 200 OK\r\n\r\n[]'
       })
-      const flaky = await start({}, { enabled: true, config: { failuresBeforeError: 2 } })
+      const flaky = await start({}, { enabled: true, config: { repository: 'acme/widgets', failuresBeforeError: 2 } })
       // Each round reads its notifications once, then waits a minute for the next.
       const until = async (count: number) => {
         while (round < count) {
@@ -803,8 +804,11 @@ describe('github source', () => {
     } finally { vi.useRealTimers() }
   })
   it('reports a failure that escapes the polling loop as its health instead of an unhandled rejection', async () => {
-    // The fixture's registry already holds the kind; this one starts empty so the plugin can register it.
-    const value = host({ sources: emptyRegistry(), ready: Promise.reject(new Error('lock held')) })
+    // The fixture's registry holds the kinds; this one starts empty of kinds and names one GitHub instance.
+    const board = new HealthBoard()
+    const sources = new SourceRegistry(() => SettingsSchema.parse({ sources: { github: { enabled: true, config: { repository: 'acme/widgets' } } } }), board)
+    healthOf.set(sources, board)
+    const value = host({ sources, ready: Promise.reject(new Error('lock held')) })
     const disposers: (() => unknown)[] = []
     applyGithub({ orchestrator: value, effect: (effect: () => () => unknown) => { disposers.push(effect()) } } as never)
     await vi.waitFor(() => expect(value.health.github).toMatchObject({ state: 'error', detail: expect.stringContaining('lock held') }))
@@ -838,11 +842,11 @@ describe('github source', () => {
     notify(h, [issue(12, { body: '@agent-bot please fix the login' }), issue(13, { pull_request: { url: 'x' } }), issue(14, agents)])
     await pollRound(h)
     expect(h.receive).toHaveBeenCalledOnce()
-    const id = key('github-issue', '12')
+    const id = key('github-issue', 'github', '12')
     const url = 'https://github.com/acme/widgets/issues/12'
     expect(h.receive.mock.calls[0]![0]).toEqual({ id, source: 'github', threads: [{ source: 'github', id: '12' }],
       actor: { source: 'github', id: 'alice' }, human: true, at: '2026-09-09T00:00:00Z',
-      text: 'Login fails\n\n@agent-bot please fix the login', addressed: 'mention', channel: githubChannel(12, url), url,
+      text: 'Login fails\n\n@agent-bot please fix the login', addressed: 'mention', channel: githubChannel('github', 12, url), url,
       meta: { number: 12, isPr: false, kind: 'issue' } })
     // An allowed sender's mention is an explicit request on that poll.
     expect(h.engine.candidate(id)?.strength).toBe('explicit')
@@ -856,7 +860,7 @@ describe('github source', () => {
       html_url: `${url}#issuecomment-5`, created_at: '2026-09-09T00:00:00Z', updated_at: '2026-09-09T00:00:00Z' }
     const { reads } = notify(h, [issue(12, { created_at: '2026-08-01T00:00:00Z' })], { 12: [comment] })
     await pollRound(h)
-    const expected = commentTrigger(comment, { number: 12, isPr: false, url }, 'conversation', 'agent-bot')
+    const expected = commentTrigger('github', comment, { number: 12, isPr: false, url }, 'conversation', 'agent-bot')
     expect(h.receive.mock.calls.map(([trigger]) => trigger)).toEqual([expected])
     // An Issue has only its conversation; the comments are read since the notification cursor.
     const since = encodeURIComponent('2026-09-08T00:00:00.000Z')
@@ -870,8 +874,8 @@ describe('github source', () => {
     await pollRound(h)
     await pollRound(h)
     expect(h.receive).toHaveBeenCalledTimes(2)
-    expect(h.store.read.threadTriggers('github:12', 10).map(trigger => trigger.id)).toEqual([key('github-issue', '12')])
-    expect(h.store.decisions.byThread('github:12').map(decision => decision.triggerIds)).toEqual([[key('github-issue', '12')]])
+    expect(h.store.read.threadTriggers('github:12', 10).map(trigger => trigger.id)).toEqual([key('github-issue', 'github', '12')])
+    expect(h.store.decisions.byThread('github:12').map(decision => decision.triggerIds)).toEqual([[key('github-issue', 'github', '12')]])
     h.store.close()
   })
   it('takes in an Issue without a mention as a Trigger that is not addressed, and a bot\'s Issue as automated', async () => {
@@ -880,16 +884,16 @@ describe('github source', () => {
     await pollRound(h)
     const taken = (number: number) => h.receive.mock.calls.map(([trigger]) => trigger).find(trigger => trigger.meta.number === number)
     const [plain, bot] = [taken(12), taken(15)]
-    expect(plain).toMatchObject({ id: key('github-issue', '12'), human: true })
+    expect(plain).toMatchObject({ id: key('github-issue', 'github', '12'), human: true })
     expect(plain).not.toHaveProperty('addressed')
-    expect(bot).toMatchObject({ id: key('github-issue', '15'), human: false })
+    expect(bot).toMatchObject({ id: key('github-issue', 'github', '15'), human: false })
     // The Issue's own read position moves past what this round read.
     expect(Date.parse(h.store.get<string>('github-cursor:12')!)).toBeGreaterThan(Date.parse('2026-09-08T00:00:00.000Z'))
     h.store.close()
   })
   it('keeps an Issue body the unclaimed-Issue Source stored before as the one Trigger of that body', async () => {
     const h = host()
-    const stored: Trigger = { id: key('github-issue', '12'), source: 'github-issue', threads: [{ source: 'github', id: '12' }],
+    const stored: Trigger = { id: key('github-issue', 'github', '12'), source: 'github-issue', threads: [{ source: 'github', id: '12' }],
       actor: { source: 'github', id: 'alice' },
       human: true, at: '2026-09-09T00:00:00Z', text: 'Login fails\n\n@agent-bot please fix the login', meta: { number: 12, isPr: false,
         eligibleAt: '' } }
@@ -942,7 +946,7 @@ describe('github source', () => {
   })
   it('lets a ticket follow its source PR or the agent\'s PR from its branch, and refuses others', async () => {
     const h = host()
-    const source = commentTrigger({ id: 1, body: '@agent-bot fix', user: { login: 'alice' },
+    const source = commentTrigger('github', { id: 1, body: '@agent-bot fix', user: { login: 'alice' },
       html_url: 'https://github.com/acme/widgets/pull/30#issuecomment-1' }, { number: 30, isPr: true }, 'conversation', 'agent-bot')
     h.store.triggers.save(source)
     h.store.tickets.save({ ...openTicket('t1'), execution: execution('fix-1'), origin: { triggerId: source.id, triggerIds: [source.id] } })
@@ -1226,7 +1230,7 @@ describe('observing the GitHub repository', () => {
     await pollRound(h)
     // #3 was opened before the Source observed Issues, and #6 is the agent's own.
     expect(h.receive.mock.calls.map(([trigger]) => [trigger.meta.number, trigger.meta.kind, trigger.id]))
-      .toEqual([[4, 'issue', issueTrigger(issue(4), 'agent-bot').id], [5, 'pull', issueTrigger(issue(5), 'agent-bot').id]])
+      .toEqual([[4, 'issue', issueTrigger('github', issue(4), 'agent-bot').id], [5, 'pull', issueTrigger('github', issue(5), 'agent-bot').id]])
     const started = { issues: at(0), pulls: at(0) }
     expect(h.store.get('github-stream:issues')).toEqual({ since: cursorAt(at(4)), started })
     const list = () => calls.filter(args => args[1]!.startsWith('repos/acme/widgets/issues?'))
