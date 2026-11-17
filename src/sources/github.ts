@@ -11,7 +11,7 @@ import { githubLink, sendGithub } from './github-channel.ts'
 import type { GithubComment, PullRef } from './github-trigger.ts'
 import { observePull, pullsOf, readPull, type Pull } from './github-pull.ts'
 import { health, sourceContext, type Health, type SourceContext } from './host.ts'
-import { GITHUB_KIND, isGithubSource } from './instance-id.ts'
+import { isGithubSource } from './instance-id.ts'
 import { KV } from '../kv.ts'
 import { cursorAt, pause, POLL_HORIZON_MS, pollThreads as pollEach } from './poll.ts'
 import type { Localized, SourceKind } from './kind.ts'
@@ -116,7 +116,8 @@ export function apply(ctx: Context): void {
     const host = ctx.orchestrator
     const running = new Map<string, { controller: AbortController; dispose: () => void; done: Promise<void> }>()
     const reconcile = () => {
-      const wanted = new Set(host.sources.instances().filter(instance => instance.kind === GITHUB_KIND).map(instance => instance.id))
+      // A stored instance is listed before its kind is registered, so its id names the kind.
+      const wanted = new Set(host.sources.instances().filter(instance => isGithubSource(instance.id)).map(instance => instance.id))
       for (const [id, entry] of running) {
         if (wanted.has(id)) continue
         entry.controller.abort(); entry.dispose(); running.delete(id)
