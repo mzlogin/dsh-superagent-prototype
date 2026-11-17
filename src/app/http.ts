@@ -35,7 +35,7 @@ export interface HttpHost {
   readonly sources: SourceRegistry
   readonly prompts: Pick<Prompts, 'current' | 'version' | 'history' | 'preview' | 'save' | 'defaultChanged'>
   readonly sessions: Pick<Sessions, 'status' | 'notify' | 'delivery'>
-  readonly settings: Pick<Settings, 'view' | 'save' | 'pause' | 'sync' | 'refreshLabels'>
+  readonly settings: Pick<Settings, 'view' | 'save' | 'pause' | 'sync' | 'refreshLabels' | 'removeSource'>
   readonly engine: EngineForPeople
   readonly executor: Pick<DshExecutor, 'activeCount'>
   readonly health: Record<string, Health>
@@ -197,10 +197,18 @@ function routes(runtime: HttpHost): Routes {
     'POST executor/pause': async ({ body }) => runtime.settings.pause(z.object({ paused: z.boolean() }).parse(await body()).paused, 'panel'),
     'PUT settings/:block': async ({ params, body }) => {
       const block = SettingsBlockSchema.parse(params.block)
-      const known = !block.startsWith('source:') || runtime.sources.instances().some(instance => `source:${instance.id}` === block)
+      // A new instance is saved under its own id; the kind must be installed, the instance need not exist yet.
+      const id = block.startsWith('source:') ? block.slice('source:'.length) : undefined
+      const known = !block.startsWith('source:')
+        || runtime.sources.instances().some(instance => instance.id === id) || runtime.sources.kindOf(id!) !== undefined
       if (!known) throw new RouteError(404, 'Source not found')
       const request = SaveRequest.parse(await body())
       return runtime.settings.save(block, request.value, request.revision, 'panel')
+    },
+    'DELETE settings/:block': async ({ params }) => {
+      const block = SettingsBlockSchema.parse(params.block)
+      if (!block.startsWith('source:')) throw new RouteError(400, 'Only a Source settings block can be removed')
+      return runtime.settings.removeSource(block.slice(7), 'panel')
     },
     'GET policy/history': () => policyHistory(store, runtime.sources, policyVersion(store.settings())),
     'POST policy-sync/:id': async ({ params }) => ({ policy: await runtime.settings.sync(params.id) }),

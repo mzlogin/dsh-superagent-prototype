@@ -366,6 +366,15 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
     server.revisions[block] = (server.revisions[block] ?? 0) + 1
     return { restarting, revision: server.revisions[block] }
   } },
+  'DELETE settings/:block': { answer: ({ params: { block } }) => {
+    if (!block.startsWith('source:')) return refuse(400, 'Only a Source settings block can be removed')
+    const id = block.slice('source:'.length)
+    if (!(id in server.settings.sources)) return refuse(404, 'Source not found')
+    const { [id]: _removed, ...left } = server.settings.sources
+    const { [id]: _part, ...leftPolicy } = server.settings.policy.sources
+    server.settings = { ...server.settings, sources: left, policy: { ...server.settings.policy, sources: leftPolicy } }
+    return { removed: true, restarting: false }
+  } },
   'GET policy/history': { answer: () => server.history },
   'POST policy-sync/:id': { answer: ({ params }) => ({ policy: server.settings.policy.sources[params.id] }) },
   'POST setup/check': { answer: () => ({ restarting: true }) },

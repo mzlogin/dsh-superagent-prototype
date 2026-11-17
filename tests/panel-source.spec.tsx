@@ -63,7 +63,7 @@ it('renders each Source\'s settings from its kind\'s fields and saves one Source
   await mount()
   await click(zh['tab.source'])
   await click(find(zh['tab.settings'], '.dt-status-head button'))
-  const cards = all('.dt-card')
+  const cards = all('.dt-card:not(.dt-add-source)')
   expect(cards.map(card => card.querySelector('.dt-row-title')?.firstChild?.textContent)).toEqual(['飞书', 'GitHub'])
   const feishu = cards[0]!
   expect(feishu.textContent).toContain('接收的群')

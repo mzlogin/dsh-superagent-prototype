@@ -27,9 +27,10 @@ function serve(runtime: Partial<Record<keyof HttpHost, unknown>>, host = '127.0.
 
 it('answers each kind of failure with its own status', async () => {
   const saves: unknown[] = []
+  const removed: unknown[] = []
   const call = serve({
     store: { tickets: { get: () => undefined }, blockRevision: () => 0 },
-    sources: { instances: () => [{ id: 'github' }] },
+    sources: { instances: () => [{ id: 'github' }], kindOf: (id: string) => id === 'github' ? { kind: 'github' } : undefined },
     settings: { save: async (...args: unknown[]) => {
       saves.push(args)
       if (args[1] === 'stale') throw new SettingsConflict('Settings changed. Reload before saving.')
@@ -37,7 +38,7 @@ it('answers each kind of failure with its own status', async () => {
       if (args[1] === 'refused') throw new SetupError('agentCliUnset')
       if (args[1] === 'broken') throw new Error('disk full')
       return { saved: true, revision: 1, restarting: false }
-    } },
+    }, removeSource: async (...args: unknown[]) => { removed.push(args); return { removed: true, restarting: false } } },
   })
   expect(await call('PUT', 'settings/executor', { value: 'stale', revision: 0 })).toMatchObject({ status: 409 })
   expect(await call('PUT', 'settings/executor', { value: 'invalid', revision: 0 })).toMatchObject({ status: 400, body: { issues: [{ path: 'maxWorkers' }] } })
@@ -47,6 +48,10 @@ it('answers each kind of failure with its own status', async () => {
   expect(await call('PUT', 'settings/pause', { value: {}, revision: 0 })).toMatchObject({ status: 400 })
   expect(await call('PUT', 'settings/source:feishu', { value: {}, revision: 0 })).toEqual({ status: 404, body: { error: 'Source not found' } })
   expect(saves).toHaveLength(4)
+  // A Source block is removed through the panel origin; other blocks are refused.
+  expect(await call('DELETE', 'settings/source:github')).toMatchObject({ status: 200, body: { removed: true } })
+  expect(removed).toEqual([['github', 'panel']])
+  expect(await call('DELETE', 'settings/policy')).toMatchObject({ status: 400 })
   expect(await call('POST', 'tickets/t9/retry')).toEqual({ status: 404, body: { error: 'Ticket not found' } })
   expect(await call('GET', 'nothing/here')).toEqual({ status: 404, body: { error: 'Unknown operation' } })
   expect(await call('POST', 'executor/pause', 'not json')).toEqual({ status: 400, body: { error: 'The request body is not JSON' } })

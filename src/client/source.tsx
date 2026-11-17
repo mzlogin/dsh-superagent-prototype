@@ -1,9 +1,10 @@
 /** Source status view (health, filtered Triggers, dropped replies) and Source settings cards. */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import type { FieldSpec } from '../sources/kind.ts'
 import { usePoll, type DroppedReply, type SourceStatusRow, type SourceView } from './api.ts'
-import { DisclosureRow, Dot, Icon, InfoTip, Switch, Tag } from './controls.tsx'
+import { Button, DisclosureRow, Dot, Icon, InfoTip, Input, Switch, Tag } from './controls.tsx'
 import { SaveBar } from './draft.tsx'
+import { githubInstanceId } from '../sources/instance-id.ts'
 import { sourceMark } from './marks.ts'
 import { usePanel, usePanelData } from './provider.tsx'
 import { setupPage, settingsRoute, type Route } from './route.ts'
@@ -18,6 +19,11 @@ function SourceCard({ source }: { source: SourceView }) {
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const refreshLabels = async () => { const { added } = await call('POST sources/:id/labels',
     { id: source.id }); await reload(); return added }
+  const remove = async () => {
+    if (!window.confirm(t('sourceRemoveConfirm', { name: localized(t, source.title) }))) return
+    await call('DELETE settings/:block', { block: `source:${source.id}` })
+    await reload()
+  }
   const draft = useBlockDraft(`source:${source.id}`, source.value, source.revision)
   const value = draft.value
   const { problem, value: saved } = source
@@ -42,6 +48,7 @@ function SourceCard({ source }: { source: SourceView }) {
         </div>
         {source.installed && <Switch checked={value.enabled} onChange={enabled => draft.edit({ ...value, enabled })}
           label={t('sourceEnable', { name: localized(t, source.title) })} />}
+        {source.installed && source.kind === 'github' && <Button size="sm" onClick={() => { void remove() }}>{t('sourceRemove')}</Button>}
       </div>
       {problem && <div className="dt-row-buttons">
         <p className="dt-error" role="status"><SetupMessage problem={problem} lead /></p><CheckSetupButton />
@@ -58,11 +65,48 @@ function SourceCard({ source }: { source: SourceView }) {
   </form>
 }
 
+/** Adds another GitHub Source instance, reusing the first instance's agent CLI, and saves it as `source:<id>`. */
+function AddRepository() {
+  const { t, call } = usePanel()
+  const { settings, reload } = useSettings()
+  const [repository, setRepository] = useState('')
+  const [error, setError] = useState<string>()
+  const [busy, setBusy] = useState(false)
+  const github = settings.sources.filter(source => source.kind === 'github')
+  if (github.length === 0) return null
+  const cli = String(github[0]!.value.config.cli ?? '')
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    const value = repository.trim()
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value)) { setError(t('repositoryInvalid')); return }
+    const id = githubInstanceId(value)
+    if (settings.sources.some(source => source.id === id)) { setError(t('sourceExists')); return }
+    setBusy(true); setError(undefined)
+    try {
+      await call('PUT settings/:block', { block: `source:${id}`,
+        body: { value: { enabled: true, config: { repository: value, cli } }, revision: 0 } })
+      setRepository('')
+      await reload()
+    } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)) }
+    finally { setBusy(false) }
+  }
+  return <form className="dt-card dt-add-source" onSubmit={event => { void submit(event) }}>
+    <div className="dt-card-head"><div className="dt-row-main"><div className="dt-row-title">
+      <span className="dt-card-title">{t('sourceAddRepository')}</span><InfoTip text={t('sourceAddHint')} />
+    </div></div></div>
+    <Input value={repository} placeholder={t('sourceAddPlaceholder')} disabled={busy}
+      onChange={event => setRepository(event.target.value)} />
+    {error && <p className="dt-error" role="alert">{error}</p>}
+    <div className="dt-row-buttons"><Button type="submit" variant="primary" size="sm" disabled={busy}>{t('sourceAddAction')}</Button></div>
+  </form>
+}
+
 export function SourceSettings({ focus }: { focus?: string }) {
   const { sources } = useSettings().settings
   useEffect(() => { if (focus) document.getElementById(`dt-source-${focus}`)?.scrollIntoView?.({ block: 'start' }) }, [focus])
   return <div className="dt-form">
     {sources.map(source => <SourceCard key={source.id} source={source} />)}
+    <AddRepository />
     <ConfigHistory blocks={['source:']} />
   </div>
 }
