@@ -73,7 +73,7 @@ enabled instance and disposes it when the instance is removed.
 The instance id keeps the settings-key rule `[a-z][a-z0-9-]*`. A new instance
 takes `github-<owner>-<repo>`, slugified to lowercase letters, digits and
 hyphens (GitHub allows dots, underscores and capitals, which become hyphens)
-and cut to 48 characters; a collision gets a `-2`, `-3` suffix. The id is a
+and cut to 64 characters; a collision gets a `-2`, `-3` suffix. The id is a
 stable handle chosen when the repository is added and does not change when its
 `repository` configuration is edited later; the panel always shows the live
 `owner/name` from the configuration, not the id.

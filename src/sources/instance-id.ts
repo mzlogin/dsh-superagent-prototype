@@ -1,5 +1,5 @@
 /** Instance ids for Source entries: settings keys (`^[a-z][a-z0-9-]*$`), readable in Thread keys and health rows. */
-export const INSTANCE_ID_MAX = 48
+export const INSTANCE_ID_MAX = 64
 
 /**
  * Derives a GitHub Source instance id from `owner/name`: lowercase, letters, digits and hyphens only,

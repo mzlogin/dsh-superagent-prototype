@@ -16,6 +16,7 @@ it('derives a readable instance id from the repository', () => {
   expect(githubInstanceId('Acme/Widgets')).toBe(ID)
   expect(githubInstanceId('a.b_c/d-e')).toBe('github-a-b-c-d-e')
   expect(githubInstanceId('')).toBe('github')
+  expect(githubInstanceId(`${'a'.repeat(70)}/${'b'.repeat(70)}`)).toHaveLength(64)
 })
 
 it('renames the legacy github instance in settings and every stored record', () => {
