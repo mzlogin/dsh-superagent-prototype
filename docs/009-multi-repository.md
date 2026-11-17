@@ -51,9 +51,14 @@ Everything that is keyed by a Source is keyed by the instance id from then on:
 
 ## Compatibility
 
-The first instance keeps the id `github`, so an existing profile's settings,
-policy, Threads, Triggers, cursors and Tickets stay valid: keys only gain the
-instance prefix when the instance is not `github`. New instances start empty.
+Every instance uses the same rule, including the first one. A profile created
+before this change stores its single repository as `github`, so a schema 12
+migration renames that instance to `github-<owner>-<repo>` in one transaction:
+settings and their stored versions, the Policy, Thread keys and their
+`correlated`/`context` references, `trigger`/`trigger_thread`, `decision`,
+`ticket` Mandates and bases, the Outbox, and the `github-*` KV keys (cursors,
+retries, streams, CI revisions). A profile with no repository configured keeps
+`github` until its first save assigns the derived id.
 
 ## Configuration
 
@@ -73,6 +78,8 @@ stable handle chosen when the repository is added and does not change when its
 
 ## Phases
 
+0. **Schema 12 migration.** Rename the legacy `github` instance to its
+   derived id before the runtime reads Settings, Threads or `kv`.
 1. **Registry instances.** `SourceRegistry.register(kind, instanceId)`,
    `instances()`/`instance(id)`/`channelAllowed`/`scope`/`send`/`threadContext`
    resolve by instance id; health entries are namespaced; settings and policy
