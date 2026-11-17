@@ -57,27 +57,23 @@ instance prefix when the instance is not `github`. New instances start empty.
 
 ## Configuration
 
-The profile's `cordis.patch.yml` declares one entry per repository:
+One Cordis entry stays the only GitHub entry. The instance list lives in
+settings: `settings.sources` holds every `github`-prefixed key (`github`,
+`github-teacher-ios`, ...), so the panel can add and remove repositories
+without editing the loader configuration. The plugin keeps one watcher per
+enabled instance and disposes it when the instance is removed.
 
-```yaml
-- insert:
-    - id: dsh-superagent-github
-      name: dsh-superagent/github-watch
-    - id: dsh-superagent-github-2
-      name: dsh-superagent/github-watch
-    - id: dsh-superagent-github-3
-      name: dsh-superagent/github-watch
-```
-
-Each entry becomes a Source card; the repository and CLI are set in the panel,
-as today. Adding a repository means adding an entry and restarting the profile.
+The instance id keeps the settings-key rule `[a-z][a-z0-9-]*`; the panel derives
+a new id from the repository name (`github-<repo>`), falling back to a counter
+(`github-2`).
 
 ## Phases
 
 1. **Registry instances.** `SourceRegistry.register(kind, instanceId)`,
    `instances()`/`instance(id)`/`channelAllowed`/`scope`/`send`/`threadContext`
-   resolve by instance id; health entries are namespaced. No behaviour change
-   for a single instance; add registry tests.
+   resolve by instance id; health entries are namespaced; settings and policy
+   validate an instance by its kind prefix. No behaviour change for a single
+   instance; add registry tests.
 2. **GitHub Source.** Thread/Trigger id helpers take the instance id; cursors
    and health names do too; the Source reads its instance id from the Cordis
    entry and registers it.
@@ -85,22 +81,20 @@ as today. Adding a repository means adding an entry and restarting the profile.
    each enabled repository's push access; pick the ticket's deployment by its
    Trigger's Source; keep one worker git config and one shim directory.
 4. **Panel.** Source list renders every instance with its own form, health and
-   setup problem.
+   setup problem, plus Add and Remove actions that save the `source:<id>`
+   block.
 5. **Template and docs.** Ship a patch template with N GitHub entries,
    document adding a repository, and note the migration story.
 
+## Decisions
+
+- Repositories may be added and removed from the panel; no patch edit or
+  profile restart is required for the source list itself.
+- Every repository has its own allowed list and admission table.
+- Every repository uses the same agent account (one `gh-agent`).
+
 ## Out of scope
 
-- Adding or removing an instance from the panel without editing the patch and
-  restarting.
 - Several Feishu bots, or a different agent account per repository.
 - Moving Tickets between instances.
 
-## Open questions
-
-1. A fixed number of entries in the patch, or an "Add repository" button that
-   edits the loader configuration at runtime?
-2. Should each repository have its own allowed list, or one list shared by all
-   GitHub instances?
-3. Does every repository use the same agent account (one `gh-agent`), or does
-   a repository need its own account?
