@@ -5,7 +5,7 @@
 import { basename } from 'node:path'
 import { z } from 'zod'
 import { isoTime, said, type AcceptMode, type AdmissionCell, type ChannelRef, type Decision, type Execution, type Follow, type MandateBasis,
-  type Reason, type Thread, type Ticket, type TicketInput, type TriggerDisposition } from '../core/index.ts'
+  type Reason, type Thread, type Ticket, type TicketInput, type Trigger, type TriggerDisposition } from '../core/index.ts'
 import { feishuChatLink } from '../sources/feishu-channel.ts'
 import { POLL_HORIZON_MS } from '../sources/poll.ts'
 import { SettingsSchema, policyVersion, type SettingsOrigin } from '../policy.ts'
@@ -16,8 +16,9 @@ import { promptsNotice, settingsNotice, subscriptionNotice } from './notices.ts'
 import type { SettingsVersion, Store } from './store.ts'
 import { Versions } from './versions.ts'
 import { KV, type Key } from '../kv.ts'
+import { githubInstanceId } from '../sources/instance-id.ts'
 
-export const SCHEMA_VERSION = 11
+export const SCHEMA_VERSION = 12
 /** The oldest database schema version this build can open and migrate directly. */
 export const OLDEST_SCHEMA = 10
 /** Returns an error message explaining why `version` cannot be opened: older schemas need a new state directory. */
@@ -613,4 +614,95 @@ function assessmentTriggers(store: Store): void {
     store.db.prepare(`INSERT INTO effect (kind, key, value, seq, due, since) VALUES ('assessment', ?, ?, ?, ?, ?) ON CONFLICT(kind, key) DO NOTHING`)
       .run(evaluation.id, JSON.stringify({ triggerId: evaluation.triggerIds[0] }), ++seq, Date.now(), new Date().toISOString())
   }
+}
+
+/**
+ * Schema 12: the single GitHub Source instance `github` takes the same id rule as every later one,
+ * `github-<owner>-<repo>`. Renames the current settings snapshot, Threads, Triggers, Decisions, Tickets, the Outbox and the
+ * `github-*` KV records in one pass; stored settings versions keep the old id.
+ */
+export function migrateTo12(store: Store): void {
+  const settings = store.settings()
+  const repository = String((settings.sources.github?.config as Record<string, unknown> | undefined)?.repository ?? '')
+  if (!repository) return
+  const next = githubInstanceId(repository)
+  if (next === 'github' || settings.sources[next]) return
+  const thread = (key: string): string => key === 'github' || key.startsWith('github:') ? `${next}${key.slice('github'.length)}` : key
+  const actor = <A extends { source?: string }>(value: A): A => value.source === 'github' ? { ...value, source: next } : value
+  const renameRecord = <V>(record: Record<string, V>): Record<string, V> => {
+    if (!('github' in record)) return record
+    const { github, ...rest } = record
+    return { [next]: github!, ...rest }
+  }
+  const kv = (name: string): void => {
+    const value = store.get<unknown>(name as Key<unknown>)
+    store.delete(name)
+    if (value !== undefined) store.set(name.replace(/github$/, next) as Key<unknown>, value)
+  }
+
+  step('the settings', () => {
+    const renamed = { ...settings, sources: renameRecord(settings.sources), policy: { ...settings.policy, sources: renameRecord(settings.policy.sources) } }
+    store.saveSettings(renamed, { source: 'internal', policyVersion: policyVersion(renamed), policyChanged: true, notified: [] })
+  })
+  for (const value of store.threads.list()) {
+    if (value.key !== 'github' && !value.key.startsWith('github:') && value.ref.source !== 'github') continue
+    step(`thread ${value.key}`, () => {
+      store.db.prepare('DELETE FROM thread WHERE key=?').run(value.key)
+      store.threads.save({ ...value, key: thread(value.key), ref: actor(value.ref), correlated: value.correlated.map(thread),
+        ...(value.evaluating ? { evaluating: { ...value.evaluating, actor: actor(value.evaluating.actor), basis: actor(value.evaluating.basis) } } : {}) })
+    })
+  }
+  for (const row of store.db.prepare('SELECT DISTINCT thread FROM trigger_thread').all()) {
+    const key = String(row.thread)
+    if (key === 'github' || key.startsWith('github:')) step(`trigger_thread ${key}`, () => {
+      store.db.prepare('UPDATE trigger_thread SET thread=? WHERE thread=?').run(thread(key), key)
+    })
+  }
+  for (const row of store.db.prepare('SELECT id, value FROM trigger').all()) {
+    const trigger = JSON.parse(String(row.value)) as Trigger
+    if (trigger.source !== 'github') continue
+    step(`trigger ${trigger.id}`, () => {
+      const moved: Trigger = { ...trigger, source: next, threads: trigger.threads.map(actor), actor: actor(trigger.actor),
+        ...(trigger.channel ? { channel: { ...actor(trigger.channel), thread: thread(trigger.channel.thread) } } : {}) }
+      store.db.prepare('UPDATE trigger SET value=? WHERE id=?').run(JSON.stringify(moved), moved.id)
+    })
+  }
+  for (const row of store.db.prepare('SELECT id, value FROM decision').all()) {
+    const decision = JSON.parse(String(row.value)) as Decision
+    if (decision.threadKey !== 'github' && !decision.threadKey.startsWith('github:')) continue
+    step(`decision ${decision.id}`, () => {
+      const moved: Decision = { ...decision, threadKey: thread(decision.threadKey),
+        ...(decision.mandate ? { mandate: { ...decision.mandate, actor: actor(decision.mandate.actor), basis: actor(decision.mandate.basis) } } : {}) }
+      store.db.prepare('UPDATE decision SET value=?, thread=? WHERE id=?').run(JSON.stringify(moved), moved.threadKey, moved.id)
+    })
+  }
+  for (const row of store.db.prepare('SELECT id, value FROM ticket').all()) {
+    const ticket = JSON.parse(String(row.value)) as Ticket
+    const follows = ticket.follows ?? []
+    if (ticket.mandate.basis.source !== 'github' && ticket.mandate.actor.source !== 'github'
+      && !ticket.channels.some(channel => channel.source === 'github') && !follows.some(follow => follow.thread.startsWith('github'))) continue
+    step(`ticket ${ticket.id}`, () => {
+      const moved: Ticket = { ...ticket, mandate: { ...ticket.mandate, actor: actor(ticket.mandate.actor), basis: actor(ticket.mandate.basis) },
+        channels: ticket.channels.map(channel => channel.source === 'github' ? { ...channel, source: next, thread: thread(channel.thread) } : channel),
+        ...(ticket.follows ? { follows: follows.map(follow => ({ ...follow, thread: thread(follow.thread) })) } : {}) }
+      store.db.prepare('UPDATE ticket SET value=? WHERE id=?').run(JSON.stringify(moved), moved.id)
+    })
+  }
+  for (const row of store.db.prepare('SELECT id, value FROM outbox').all()) {
+    const message = JSON.parse(String(row.value)) as { channel?: ChannelRef }
+    if (message.channel?.source !== 'github') continue
+    step(`outbox ${String(row.id)}`, () => {
+      const moved = { ...message, channel: { ...message.channel!, source: next, thread: thread(message.channel!.thread) } }
+      store.db.prepare('UPDATE outbox SET value=? WHERE id=?').run(JSON.stringify(moved), String(row.id))
+    })
+  }
+  step('the kv records', () => {
+    for (const name of store.keys('github-')) {
+      const value = store.get<unknown>(name as Key<unknown>)
+      store.delete(name)
+      if (value !== undefined) store.set(`${next}${name.slice('github'.length)}` as Key<unknown>, value)
+    }
+    kv('source-labels:github')
+    kv('settings-block-revision:source:github')
+  })
 }

@@ -13,8 +13,12 @@ export interface SetupHost {
   restart(): void
 }
 
+/** Settings keys that belong to `kind`, including the numbered instances a GitHub Source may have. */
+export const sourceIdsOf = (settings: Settings, kind: string): string[] =>
+  Object.keys(settings.sources).filter(id => id === kind || id.startsWith(`${kind}-`)).sort()
 const setupFields = (settings: Settings) =>
-  JSON.stringify(Object.entries(SETUP_FIELDS).map(([id, keys]) => keys.map(key => settings.sources[id]?.config[key] ?? '')))
+  JSON.stringify(Object.entries(SETUP_FIELDS).flatMap(([kind, keys]) =>
+    sourceIdsOf(settings, kind).map(id => [id, ...keys.map(key => settings.sources[id]?.config[key] ?? '')])))
 export const setupChanged = (before: Settings, after: Settings): boolean => setupFields(before) !== setupFields(after)
 
 /**
@@ -60,8 +64,9 @@ export class Setup {
   /** Verify account CLIs for a modified source block before saving, ignoring setup errors belonging to other blocks. */
   async checkAccounts(block: SettingsBlock, settings: Settings): Promise<void> {
     const { machine } = this.host
-    const check = block === 'source:feishu' ? resolveFeishuBot(machine, settings.sources.feishu?.config, this.probe())
-      : resolveDeployment(machine, settings.sources.github?.config, this.probe())
+    const id = block.slice('source:'.length)
+    const check = block === 'source:feishu' ? resolveFeishuBot(machine, settings.sources[id]?.config, this.probe())
+      : resolveDeployment(machine, settings.sources[id]?.config, this.probe())
     await check.catch((error: unknown) => { if (!(error instanceof SetupError) || error.place === block.slice(7)) throw error })
   }
   async blockCommands(blocked: readonly string[]): Promise<void> {
@@ -76,7 +81,9 @@ export class Setup {
   private async resolve(settings: Settings): Promise<Deployment> {
     const { context, machine, lifetime } = this.host
     const probe = this.probe()
-    const deployment = await resolveDeployment(machine, settings.sources.github?.config, probe)
+    // The first GitHub instance carries the repository the worker environment is written for; later instances reuse it.
+    const github = sourceIdsOf(settings, 'github').find(id => String((settings.sources[id]?.config as Record<string, unknown> | undefined)?.repository ?? '') !== '')
+    const deployment = await resolveDeployment(machine, github ? settings.sources[github]?.config : undefined, probe)
     const feishu = await resolveFeishuBot(machine, settings.sources.feishu?.config, probe).catch((error: unknown) => {
       if (!(error instanceof SetupError)) throw error
       this.feishuProblem = error.problem
