@@ -63,9 +63,13 @@ settings: `settings.sources` holds every `github`-prefixed key (`github`,
 without editing the loader configuration. The plugin keeps one watcher per
 enabled instance and disposes it when the instance is removed.
 
-The instance id keeps the settings-key rule `[a-z][a-z0-9-]*`; the panel derives
-a new id from the repository name (`github-<repo>`), falling back to a counter
-(`github-2`).
+The instance id keeps the settings-key rule `[a-z][a-z0-9-]*`. A new instance
+takes `github-<owner>-<repo>`, slugified to lowercase letters, digits and
+hyphens (GitHub allows dots, underscores and capitals, which become hyphens)
+and cut to 48 characters; a collision gets a `-2`, `-3` suffix. The id is a
+stable handle chosen when the repository is added and does not change when its
+`repository` configuration is edited later; the panel always shows the live
+`owner/name` from the configuration, not the id.
 
 ## Phases
 
