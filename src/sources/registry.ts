@@ -49,6 +49,8 @@ export class SourceRegistry implements SourceScope {
   healthEntries(names: readonly string[]): Map<string, HealthEntry> {
     return new Map(names.flatMap(name => { const entry = this.health.get(name); return entry ? [[name, entry] as const] : [] }))
   }
+  /** True when an instance with this id is already registered. */
+  has(id: string): boolean { return this.registrations.has(id) }
   kind(id: string): SourceKind | undefined { return this.kinds.get(id) }
   /** Resolves an instance id to its kind: the kind id itself or a `<kind>-<suffix>` instance. */
   kindOf(id: string): SourceKind | undefined {
@@ -125,7 +127,7 @@ export class SourceRegistry implements SourceScope {
     return link ?? { url: '', label: { zh: channel.source, en: channel.source } }
   }
   find(query: string): { threads: string[]; terms: string[] } {
-    const found = [...this.kinds.values()].flatMap(kind => kind.find ? [kind.find(query)] : [])
+    const found = [...this.registrations.entries()].flatMap(([id, { kind }]) => kind.find ? [kind.find(query, id)] : [])
     return { threads: [...new Set(found.flatMap(item => item.threads))], terms: [...new Set(found.flatMap(item => item.terms))] }
   }
   repliesTo(trigger: Trigger): string | undefined { return this.kindOf(trigger.source)?.repliesTo?.(trigger) }

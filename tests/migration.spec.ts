@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { SCHEMA_VERSION, Store } from '../src/app/store.ts'
-import { KV } from '../src/kv.ts'
+import { KV, type Key } from '../src/kv.ts'
 import { basisOf, reasonsOf, withoutCopies } from '../src/app/migration.ts'
 import { Prompts, composePrompt, defaultPrompts } from '../src/app/prompts.ts'
 import { masterPrompt } from '../src/app/context.ts'
@@ -409,9 +409,9 @@ it('writes the Sources\' records in their current shape once, so no Source conve
   expect(store.threads.get('feishu:oc_team:om_9')!.meta.url).toBe('https://applink.feishu.cn/client/chat/open?openChatId=oc_team')
   expect(store.triggers.get('issue')!.source).toBe('github')
   // The waiting mention within the polling horizon is read again; the older one is no fresh request.
-  expect(store.get(KV.github.retries)).toEqual({ 12: { since: recent, pr: false } })
-  expect(store.get(KV.github.cursor(7))).toBe('2026-09-03T00:00:00.000Z')
-  expect(store.get(KV.github.cursor(8))).toBe('2026-09-04T00:00:00.000Z')
+  expect(store.get('github-retry' as Key<Record<string, { since: string; pr: boolean }>>)).toEqual({ 12: { since: recent, pr: false } })
+  expect(store.get('github-cursor:7' as Key<string>)).toBe('2026-09-03T00:00:00.000Z')
+  expect(store.get('github-cursor:8' as Key<string>)).toBe('2026-09-04T00:00:00.000Z')
   for (const name of ['github-issue-pending', 'github-issues-since', 'github-thread:7', 'thread-since:github:7', 'github-thread:8']) {
     expect(store.get(name)).toBeUndefined()
   }

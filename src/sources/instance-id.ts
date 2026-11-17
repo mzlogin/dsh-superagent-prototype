@@ -10,3 +10,8 @@ export function githubInstanceId(repository: string): string {
   const id = `github-${slug}`.slice(0, INSTANCE_ID_MAX).replace(/-+$/g, '')
   return id.length > 'github-'.length ? id : 'github'
 }
+
+/** The GitHub Source kind id; an instance id is the kind or `github-<suffix>`. */
+export const GITHUB_KIND = 'github'
+/** True when `id` names a GitHub Source instance. */
+export const isGithubSource = (id: string | undefined): boolean => !!id && (id === GITHUB_KIND || id.startsWith(`${GITHUB_KIND}-`))

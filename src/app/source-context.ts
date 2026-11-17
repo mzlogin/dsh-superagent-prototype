@@ -16,6 +16,10 @@ export interface SourceContextDeps {
   readonly sources: SourceRegistry
   /** Throws when accessed before initial setup completes. */
   readonly deployment: Deployment
+  /** The deployment of one instance: the same account, with that instance's repository. */
+  deploymentFor?(instanceId: string): Deployment
+  /** Commands bound to one instance's repository. */
+  commandsFor?(instanceId: string): Commands
   readonly ready: Promise<void>
   configured(): boolean
   /** Setup problem whose `place` matches the Source kind receives it on `context.problem`. */
@@ -35,13 +39,14 @@ export function sourceContextOf(deps: SourceContextDeps, kind: { kind: string; h
   const names = instanceHealthNames(kind, instanceId)
   const health = deps.sources.healthEntries(names)
   return {
-    get deployment() { return deps.deployment },
-    commands: deps.commands,
+    id: instanceId,
+    get deployment() { return deps.deploymentFor?.(instanceId) ?? deps.deployment },
+    get commands() { return deps.commandsFor?.(instanceId) ?? deps.commands },
     ready: deps.ready,
     configured: () => deps.configured(),
     get problem() { return [deps.feishuProblem, deps.setupProblem].find(problem => problem?.place === kind.kind) },
     config: <C extends Record<string, unknown>>(id: string) => {
-      const instance = deps.sources.instance<C>(id)
+      const instance = deps.sources.instance<C>(id === kind.kind ? instanceId : id)
       return instance?.enabled ? instance.config : undefined
     },
     receive: trigger => deps.receive(trigger),

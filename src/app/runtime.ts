@@ -104,6 +104,18 @@ export class Runtime extends Service implements SourceHost {
       const masterId = this.masterId = store.get(KV.runtime.masterId) ?? `orchestrator-${key(machine.stateDir)}`
       store.set(KV.runtime.masterId, masterId)
       const commands = this.commands = new Commands(() => setup.deployment, setup.commandEnvironment, this.lifetime)
+      // Each Source instance works against its own repository with the deployment's shared accounts.
+      const deploymentFor = (id: string): Deployment => {
+        const base = setup.deployment
+        const repository = (store.settings().sources[id]?.config as { repository?: unknown } | undefined)?.repository
+        return typeof repository === 'string' && repository ? { ...base, repository } : base
+      }
+      const commandInstances = new Map<string, Commands>()
+      const commandsFor = (id: string): Commands => {
+        let value = commandInstances.get(id)
+        if (!value) { value = new Commands(() => deploymentFor(id), setup.commandEnvironment, this.lifetime); commandInstances.set(id, value) }
+        return value
+      }
       const board = this.board
       const effects = this.effects = new Effects(store, board)
       const sources = this.sources = new SourceRegistry(() => store.settings(), board, kind => {
@@ -156,7 +168,7 @@ export class Runtime extends Service implements SourceHost {
       const evaluateDue = () => { engine.evaluateDue(); evals.set(evalsHealth(store)) }
       const passes = this.passes = new Passes({ engine: { receive: trigger => engine.receive(trigger), evaluateDue }, effects,
         health: this.runtimeHealth, lifetime: this.lifetime, configured: () => setup.configured(), closing: () => this.closing() })
-      this.sourceDeps = { store, engine, outbox, commands, sources, get ready() { return runtime.ready },
+      this.sourceDeps = { store, engine, outbox, commands, sources, deploymentFor, commandsFor, get ready() { return runtime.ready },
         get deployment() { return setup.deployment }, configured: () => setup.configured(),
         get setupProblem() { return setup.problem }, get feishuProblem() { return setup.feishuProblem }, receive: trigger => passes.receive(trigger) }
       this.toolHost = { context: ctx, engine, store, prompts, sessions, settings: this.settings, assessor, resources,
