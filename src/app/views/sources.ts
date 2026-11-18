@@ -17,7 +17,12 @@ export function sourceHealth(sources: SourceRegistry, instance: SourceInstance, 
     const entry = health[name]
     return { name, ...(!entry || (instance.enabled && entry.code === 'sourceOff') ? starting : entry) }
   })
-  return { id: instance.id, title: kind?.title ?? { zh: instance.id, en: instance.id }, health: parts }
+  // Several instances of one kind are told apart by their site: a GitHub instance by its repository, like its id.
+  const siblings = sources.instances().filter(item => item.kind === instance.kind)
+  const site = typeof instance.config.repository === 'string' ? instance.config.repository : ''
+  const base = kind?.title ?? { zh: instance.id, en: instance.id }
+  const title = siblings.length > 1 && site ? { zh: `${base.zh} · ${site}`, en: `${base.en} · ${site}` } : base
+  return { id: instance.id, title, health: parts }
 }
 export interface SetupState {
   /** Resolved deployment facts; undefined while waiting for initial setup. */

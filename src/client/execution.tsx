@@ -3,9 +3,10 @@ import { useRef, useState } from 'react'
 import { TICKET_FILTERS, type TicketFilter } from '../app/api.ts'
 import { LIMITS } from '../limits.ts'
 import { usePoll, type SettingsView, type SourceView, type StateView } from './api.ts'
-import { DisclosureRow, Icon, InfoTip, Input, Pill } from './controls.tsx'
+import { Button, DisclosureRow, Icon, InfoTip, Input, Pill, Tag } from './controls.tsx'
 import { SaveBar } from './draft.tsx'
 import { usePanel } from './provider.tsx'
+import { settingsRoute } from './route.ts'
 import { TicketLine } from './rows.tsx'
 import { ConfigHistory, Field, Fields, ModelField, numberOf, useBlockDraft, useSettings } from './settings-kit.tsx'
 import { localized } from './text.ts'
@@ -73,7 +74,7 @@ function EnvironmentVariables({ groups, sources,
   </DisclosureRow>
 }
 export function ExecutionSettings() {
-  const { t } = usePanel()
+  const { t, navigate } = usePanel()
   const { blocks, environment, sources } = useSettings().settings
   // Keep raw user text (such as separators between blocked commands) in the draft and parse only on save.
   const executor = blocks.executor.value
@@ -113,6 +114,17 @@ export function ExecutionSettings() {
               placeholder={t('prepareCommandEmpty')} value={value.prepare}
               onChange={event => edit({ prepare: event.target.value })} />
           </Field>
+          <Section title={t('prepareRepositories')} hint={t('prepareRepositoriesHint')}>
+            {sources.filter(source => source.installed && source.kind === 'github').map(source => {
+              const repository = String(source.value.config.repository ?? '')
+              const covered = repository !== '' && value.prepare.includes(repository)
+              return <p key={source.id} className="dt-flow">
+                <span className="dt-mono">{repository || t('repositoryUnset')}</span>{' '}
+                <Tag tone={covered ? 'outline' : 'warning'}>{covered ? t('prepareCovered') : t('prepareMissing')}</Tag>{' '}
+                <Button size="sm" onClick={() => navigate(settingsRoute('source', { source: source.id }))}>{t('openSource')}</Button>
+              </p>
+            })}
+          </Section>
           <EnvironmentVariables groups={environment.variables} sources={sources} onPick={insert} />
           <Field label={t('blockedCommands')} hint={t('blockedCommandsHint')}>
             <Input className="dt-mono" value={value.blockedCommands} placeholder={t('blockedCommandsNone')} spellCheck={false}

@@ -11,6 +11,8 @@ export interface OutboxHost {
   readonly effects: Pick<Effects, 'enqueue' | 'cancel' | 'handle' | 'idle'>
   readonly sources: Pick<SourceRegistry, 'instance' | 'channelAllowed' | 'send'>
   readonly commands: Commands
+  /** Commands bound to one Source instance's repository; `commands` serves as the fallback. */
+  commandsFor?(source: string): Commands
   paused(): boolean
 }
 
@@ -37,7 +39,7 @@ export class Outbox implements OutboxPort {
   }
   sent(): Promise<void> { return this.host.effects.idle('reply') }
   private async deliver(id: string): Promise<void> {
-    const { store, sources, commands } = this.host
+    const { store, sources } = this.host
     const receipt = store.receipts.get(id)
     if (receipt?.status !== 'pending') return
     if (!sources.instance(receipt.channel.source)?.enabled) throw new Later('The Source is off or not installed')
@@ -45,7 +47,8 @@ export class Outbox implements OutboxPort {
     if (store.receipts.behind(id, FAILURES_BEFORE_ERROR)) throw new Later('An earlier message of this ticket to this conversation waits')
     if (!sources.channelAllowed(receipt.channel)) { store.receipts.settle(receipt, 'channelIgnored'); return }
     // A permanently unreachable target (such as a recalled message or deleted Issue) settles as `channelGone` so its receipt prevents retries.
-    const result = await sources.send(receipt, commands)
+    // Deliver through the repository the conversation belongs to, not the deployment's first one.
+    const result = await sources.send(receipt, this.host.commandsFor?.(receipt.channel.source) ?? this.host.commands)
     if (result === 'waiting') throw new Later('The Source is not installed')
     store.receipts.settle(receipt, result === 'gone' ? 'channelGone' : 'sent')
   }
