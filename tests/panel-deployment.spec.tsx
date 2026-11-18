@@ -16,8 +16,9 @@ it('saves this machine\'s settings in the Deployment settings through DSH\'s con
   await click(tab(zh['tab.settings']))
   await click(find(zh['settingsGroup.deployment'], '.dt-settings-link'))
   expect(text()).toContain('/srv/dsh-superagent')
-  // Accounts are on the Source settings; the Plugin Manager page, where those are not at hand, shows them here.
-  expect(text()).not.toContain('@agent-bot')
+  // The derived repositories and accounts are read-only here, as on the Plugin Manager page.
+  expect(text()).toContain('acme/widgets')
+  expect(text()).toContain('@agent-bot')
   for (const moved of ['仓库克隆', '工单 worktree 目录', '禁用的命令']) expect(text()).not.toContain(moved)
   expect(text()).toContain(zh.deploymentIntro)
   // A limit applies at once, so a draft of one says only that it is unsaved, even while Assignments run.

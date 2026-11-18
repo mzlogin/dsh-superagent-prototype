@@ -21,7 +21,7 @@ export function SettingsPage({ group, query, state, deploymentForm }: {
       case 'eval': return <SettingsProvider><EvalSettings version={query.version} /></SettingsProvider>
       case 'execution': return <SettingsProvider><ExecutionSettings /></SettingsProvider>
       case 'prompts': return <PromptsPage />
-      case 'deployment': return <DeploymentPage setup={state.setup} form={deploymentForm} />
+      case 'deployment': return <DeploymentPage setup={state.setup} form={deploymentForm} accounts />
     }
   })()
   return <div className="dt-settings">
