@@ -75,7 +75,9 @@ export class Setup {
     const id = block.slice('source:'.length)
     const check = block === 'source:feishu' ? resolveFeishuBot(machine, settings.sources[id]?.config, this.probe())
       : resolveDeployment(machine, settings.sources[id]?.config, this.probe())
-    await check.catch((error: unknown) => { if (!(error instanceof SetupError) || error.place === block.slice(7)) throw error })
+    // The check covers only this block, so its setup error always refuses the save; a source instance's place is its
+    // kind, not its id, so comparing places would swallow it.
+    await check.catch((error: unknown) => { if (error instanceof SetupError) throw error; throw error })
   }
   async blockCommands(blocked: readonly string[]): Promise<void> {
     if (this.resolved) await writeEnvironment(this.resolved, blocked)

@@ -5,6 +5,7 @@ import type { SetupProblem } from '../../setup.ts'
 import { anyoneAllowed } from '../../policy.ts'
 import type { Store } from '../store.ts'
 import { awaitingEval, dayAgo, newestFirst, ownersOf, snapshot, threadSummary, type ViewHost } from './records.ts'
+import { instanceHealthNames, type SourceRegistry } from '../../sources/registry.ts'
 import { sourceHealth, type HealthMap } from './sources.ts'
 import { ticketRow, type ExecutorLoad } from './tickets.ts'
 import { preview } from './text.ts'
@@ -44,7 +45,11 @@ export function overview(host: ViewHost, health: HealthMap, policyVersionValue: 
   const instances = sources.instances()
   const running = instances.filter(instance => instance.enabled && instance.installed).map(instance => sourceHealth(sources, instance, health))
   // Exclude source-owned and policy-sync health entries so only core runtime errors surface as `runtime-error`.
-  const sourceParts = new Set(instances.flatMap(instance => sources.kind(instance.kind)?.health ?? []))
+  // Health entries are keyed by instance id, so a kind's names must be mapped through each instance.
+  const sourceParts = new Set(instances.flatMap(instance => {
+    const kind = (sources as SourceRegistry).kind(instance.kind)
+    return kind ? instanceHealthNames(kind, instance.id) : []
+  }))
   const problems = [
     ...(setup ? [{ kind: 'setup' as const, ...setup }] : []),
     ...(running.length ? [] : [{ kind: 'no-source' as const }]),
