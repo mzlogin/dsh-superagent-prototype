@@ -20,7 +20,7 @@ export function EvalStatus({ filter, window, paused }: { filter: DecisionFilter;
   const show = (key: DecisionFilter, last24h: boolean) => navigate({ page: 'eval', query: { ...key === 'work' ? {} : { filter: key },
     ...last24h ? { window: '24h' } : {} } }, true)
   return <>
-    <StatusHead hint={t('evalStatusIntro')} settings="eval" />
+    <StatusHead hint={t('evalStatusIntro')} settings="policy" />
     {paused && <p className="dt-banner">
       {t('evalRecordsPaused')} <button type="button" className="dt-textlink"
         onClick={() => navigate({ page: 'execution' })}>{t('resumeWhere')}</button>
@@ -216,10 +216,17 @@ function EvalBlock() {
   </form>
 }
 
-export function EvalSettings({ version }: { version?: string | undefined }) {
+/** The Policy settings group: the rules and each Source's allowed senders and admission table. */
+export function PolicySettings({ version }: { version?: string | undefined }) {
   return <div className="dt-form">
     <PolicyBlock />
+    <ConfigHistory blocks={['policy']} versions {...version ? { focus: version } : {}} />
+  </div>
+}
+
+export function EvalSettings({ version }: { version?: string | undefined }) {
+  return <div className="dt-form">
     <EvalBlock />
-    <ConfigHistory blocks={['policy', 'eval']} versions {...version ? { focus: version } : {}} />
+    <ConfigHistory blocks={['eval']} versions {...version ? { focus: version } : {}} />
   </div>
 }

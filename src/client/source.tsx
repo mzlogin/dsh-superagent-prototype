@@ -102,9 +102,12 @@ function AddRepository() {
 }
 
 export function SourceSettings({ focus }: { focus?: string }) {
+  const { t, navigate } = usePanel()
   const { sources } = useSettings().settings
   useEffect(() => { if (focus) document.getElementById(`dt-source-${focus}`)?.scrollIntoView?.({ block: 'start' }) }, [focus])
   return <div className="dt-form">
+    <p className="dt-flow"><Hint>{t('sourcePolicyHint')}</Hint>{' '}
+      <Button size="sm" onClick={() => navigate(settingsRoute('policy'))}>{t('sourcePolicyOpen')}</Button></p>
     {sources.map(source => <SourceCard key={source.id} source={source} />)}
     <AddRepository />
     <ConfigHistory blocks={['source:']} />

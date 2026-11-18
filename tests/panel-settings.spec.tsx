@@ -27,6 +27,7 @@ it('saves the Eval block on the Policy settings and the Executor with its execut
   await mount()
   await click(zh['tab.eval'])
   await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(find(zh['settingsGroup.eval'], '.dt-settings-link'))
   await click(zh['mode.auto'])
   await type(field<HTMLInputElement>(zh.evalTimeout), '180')
   const [provider, model] = all('.dt-model input')
@@ -128,9 +129,9 @@ it('lists the settings groups stages first, opens each stage\'s group from its s
   async () => {
   await mount()
   await click(tab(zh['tab.settings']))
-  expect(all('.dt-settings-link').map(link => link.textContent)).toEqual(['来源', '评估', '执行', '提示词', '部署'])
+  expect(all('.dt-settings-link').map(link => link.textContent)).toEqual(['来源', '策略', '评估', '执行', '提示词', '部署'])
   expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['term.source'])
-  for (const [tab, group] of [['来源', '来源'], ['评估', '评估'], ['执行', '执行']] as const) {
+  for (const [tab, group] of [['来源', '来源'], ['评估', '策略'], ['执行', '执行']] as const) {
     await click(find(tab, '[role="tab"]'))
     await click(find(zh['tab.settings'], '.dt-status-head button'))
     expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(group)

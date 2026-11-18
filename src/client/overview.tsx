@@ -30,8 +30,8 @@ function ProblemLine({ problem, onChanged }: { problem: Problem; onChanged: () =
       setupPage(problem.place), t(`problemSetupFix.${problem.place}`), <CheckSetupButton />)
     case 'no-source': return row(t('problemNoSource'), undefined, settingsRoute('source'), undefined, go(t('actionOpenSources'),
       settingsRoute('source')))
-    case 'no-allowed': return row(t('problemNoAllowed'), undefined, settingsRoute('eval'), undefined, go(t('actionAddAllowed'),
-      settingsRoute('eval')))
+    case 'no-allowed': return row(t('problemNoAllowed'), undefined, settingsRoute('policy'), undefined, go(t('actionAddAllowed'),
+      settingsRoute('policy')))
     case 'executor-paused': return row(t('problemPaused'), undefined, { page: 'execution' }, undefined,
       <ConfirmButton variant="outline" icon="play" label={t('resumeProcessing')} title={t('resumeProcessing')}
         message={t('resumeProcessingConfirm')}

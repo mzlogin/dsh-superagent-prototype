@@ -91,7 +91,7 @@ it('offers the step that fixes a settings problem as a button on the overview', 
   expect(text()).toContain(zh.problemNoAllowed)
   await click(zh.actionAddAllowed)
   expect(tab(zh['tab.settings']).getAttribute('aria-selected')).toBe('true')
-  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['term.eval'])
+  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['settingsGroup.policy'])
 })
 
 it('counts the messages not sent in the last day, linking to the Source status, and shows nothing when there are none', async () => {

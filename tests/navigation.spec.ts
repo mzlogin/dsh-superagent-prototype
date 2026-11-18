@@ -56,8 +56,9 @@ it('reads each page a tab remembered with the parameters it takes, and leaves ou
     .toEqual({ page: 'trigger', id: 'github:1', query: { trigger: 'e1' } })
   expect(parseRoute({ page: 'eval', query: { filter: 'stop', window: '7d' } })).toEqual({ page: 'eval', query: { filter: 'stop' } })
   expect(parseRoute({ page: 'execution', id: 5, query: { filter: 'idle' } })).toEqual({ page: 'execution', query: { filter: 'idle' } })
-  expect(parseRoute({ page: 'settings', query: { group: 'policy', source: 'feishu' } }))
+  expect(parseRoute({ page: 'settings', query: { group: 'nope', source: 'feishu' } }))
     .toEqual({ page: 'settings', query: { group: 'source', source: 'feishu' } })
+  expect(parseRoute({ page: 'settings', query: { group: 'policy' } })).toEqual({ page: 'settings', query: { group: 'policy' } })
   expect([parseRoute('overview'), parseRoute(null)]).toEqual([undefined, undefined])
 })
 it('opens the settings that fix each setup problem: the Deployment group, or the card of the Source it names', () => {

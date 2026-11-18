@@ -99,6 +99,7 @@ it('links a question to its Channel, folds consecutive automated messages among 
   expect(text()).toContain('CI of PR #42 at abc1234: 10 checks, 0 failed, 0 running.')
   await click(zh['tab.eval'])
   await click(find(zh['tab.settings'], '.dt-status-head button'))
+  await click(find(zh['settingsGroup.eval'], '.dt-settings-link'))
   expect(text()).not.toContain('到期后记为未完成')
   const tip = field(zh.evalTimeout).closest('.dt-field')!.querySelector<HTMLElement>('.dt-info')!
   await act(async () => { tip.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })) })

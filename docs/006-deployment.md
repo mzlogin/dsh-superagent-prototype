@@ -276,6 +276,7 @@ Setup problems appear on the overview with a link to the fix, in the panel's lan
 | `@… cannot read …` or `@… cannot push to …` | Give the agent account write access to the repository |
 | `The GitHub Source names no repository.` | Set the repository, `owner/name`, on the GitHub card |
 | A setup problem names one repository (`GET state` → `setup.problems`) | Fix that repository (write access, CLI) on its card; the other Sources keep polling |
+| `dsh: warning: 1 entry did not activate` with `schedule (…): StorageError: unit 'schedule': stored version 2 != expected 1` | The home's schedule storage was upgraded by a newer DSH than this profile runs. Disable the `schedule` and `ui-schedule` entries in the profile's `cordis.patch.yml`, or run the profile on the same DSH version as the GUI that wrote the storage. The profile's Panels then have no schedule page; other profiles' schedules are unaffected. |
 | A Ticket fails with `The prepare command failed: …` | The output names the cause, such as a wrong clone path; fix the command, then retry the Ticket |
 | `git does not read the github.com credential configuration dsh-superagent writes` | Install git 2.32 or later |
 | A Ticket fails with `The git configuration of the repository in … sets …` | Remove the named credential or `http.*.extraheader` settings from the clone's `.git/config` |

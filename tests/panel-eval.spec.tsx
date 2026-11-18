@@ -60,7 +60,7 @@ it('keeps a Policy draft across remounts, and merges another save into it sender
 it('keeps the Policy to its rules and each Source\'s part, in that Source\'s own identities', async () => {
   await mount()
   await click(tab(zh['tab.settings']))
-  await click(find(zh['term.eval'], '.dt-settings-link'))
+  await click(find(zh['settingsGroup.policy'], '.dt-settings-link'))
   // Auto-merge and its threshold are prompt text, and no Source's settings sit in the Policy core.
   for (const gone of ['自动合并', '行数阈值', '成员', '计入策略版本']) expect(text()).not.toContain(gone)
   expect(all('.dt-lv').map(item => item.textContent)[0]).toBe('策略版本 abcdef12')
@@ -77,8 +77,12 @@ it('opens the rule list for an invalid field inside it only', async () => {
   await click(zh['tab.eval'])
   await click(find(zh['tab.settings'], '.dt-status-head button'))
   const openRows = () => all('.dt-disclosure[data-open]').length
+  // A field outside the rules, on the Eval settings, opens nothing.
+  await click(find(zh['settingsGroup.eval'], '.dt-settings-link'))
   await act(async () => { field(zh.evalTimeout).dispatchEvent(new Event('invalid', { bubbles: false })) })
   expect(openRows()).toBe(0)
+  // A field inside a rule, on the Policy settings, opens the rule list.
+  await click(find(zh['settingsGroup.policy'], '.dt-settings-link'))
   await click(all('.dt-rule [data-disclosure-row]')[0]!)
   await act(async () => { all('.dt-rule input')[0]!.dispatchEvent(new Event('invalid')) })
   expect(openRows()).toBe(all('.dt-rule').length)
@@ -127,7 +131,7 @@ it('shows the current Policy version once, explains what makes it up, and opens 
   await click('修复回归')
   await click('abcdef12')
   expect(tab(zh['tab.settings']).getAttribute('aria-selected')).toBe('true')
-  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['term.eval'])
+  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['settingsGroup.policy'])
   await settle()
   // The history opens at the save that made the version, and lists versions that Source saves made too.
   expect(document.querySelector('.dt-highlight')?.textContent).toContain('生成策略版本 abcdef12')
@@ -140,7 +144,7 @@ it('sets the Feishu admission table per receiving scope, offering only the cells
       otherChats: 'none' } } } }
   await mount()
   await click(tab(zh['tab.settings']))
-  await click(find(zh['term.eval'], '.dt-settings-link'))
+  await click(find(zh['settingsGroup.policy'], '.dt-settings-link'))
   const rows = all('.dt-admission tbody tr').map(row => [row.querySelector('.dt-admission-scope')!.firstChild?.textContent,
     row.querySelectorAll('select').length])
   // Chats receiving every message have all three cells; @-only chats only the mention cell; other chats nothing while not received.
@@ -166,7 +170,7 @@ it('lists each Source\'s bots next to its people and saves them, and sets the Gi
     '接收仓库里的评论', '接收默认分支的 CI'])
   expect([...github.querySelectorAll('[role="switch"]')].slice(1).map(item => item.getAttribute('aria-checked'))).toEqual(['false', 'false',
     'false', 'false'])
-  await click(find(zh['term.eval'], '.dt-settings-link'))
+  await click(find(zh['settingsGroup.policy'], '.dt-settings-link'))
   const lists = () => all('.dt-part > .dt-field .dt-subhead .dt-field-head').map(head => head.firstChild?.textContent)
   const list = (label: string) => all('.dt-part > .dt-field').find(item => item.textContent?.startsWith(label))!
   const add = async (label: string) => {
@@ -203,7 +207,7 @@ it('shows the GitHub Source\'s switches for what it receives across the reposito
   await click(find('Receive comments in the repository', '[role="switch"]'))
   await act(async () => { github.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) }); await settle()
   expect(server.settings.sources.github!.config).toMatchObject({ observeIssues: true, observeComments: true, observeCi: true })
-  await click(find(en['term.eval'], '.dt-settings-link'))
+  await click(find(en['settingsGroup.policy'], '.dt-settings-link'))
   await click(find(en['source.github'], '.dt-subtab'))
   const rows = all('.dt-admission tbody tr').map(row => [row.querySelector('.dt-admission-scope')!.firstChild?.textContent,
     row.querySelectorAll('select').length])
