@@ -179,5 +179,7 @@ describe('Source registry', () => {
     expect([...sources.healthEntries(['probe']).keys()]).toEqual(['probe'])
     expect([...sources.healthEntries(['probe-second']).keys()]).toEqual(['probe-second'])
     expect(() => sources.register(kind, 'probe-second')).toThrow('already registered')
+    // Every lookup that takes an id resolves an instance id to its kind.
+    expect(sources.kind('probe-second')).toBe(kind)
   })
 })

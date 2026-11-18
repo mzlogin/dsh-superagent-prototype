@@ -51,7 +51,8 @@ export class SourceRegistry implements SourceScope {
   }
   /** True when an instance with this id is already registered. */
   has(id: string): boolean { return this.registrations.has(id) }
-  kind(id: string): SourceKind | undefined { return this.kinds.get(id) }
+  /** The kind with this id, or the kind of an instance whose id is not the kind id. */
+  kind(id: string): SourceKind | undefined { return this.kinds.get(id) ?? (this.kindOf(id) ? this.kinds.get(this.kindOf(id)!.kind) : undefined) }
   /** Resolves an instance id to its kind: the kind id itself or a `<kind>-<suffix>` instance. */
   kindOf(id: string): SourceKind | undefined {
     const exact = this.kinds.get(id)
