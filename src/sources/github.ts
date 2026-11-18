@@ -1,6 +1,6 @@
 /** GitHub source kind definition, notification and repository polling loops, and Cordis plugin entry. */
 import type { Context } from '@deepseek-ai/cordis'
-import { key, type Thread } from '../core/index.ts'
+import { key, type Follow, type Thread, type Ticket } from '../core/index.ts'
 import { sameName } from '../infra/text.ts'
 import { GithubAccountsSchema } from '../deployment.ts'
 import { CliError, validItems, type Tally } from '../infra/commands.ts'
@@ -9,7 +9,7 @@ import { branchCiTrigger, ciTrigger, commentTrigger, CommentSchema, githubAddres
   from './github-trigger.ts'
 import { githubLink, sendGithub } from './github-channel.ts'
 import type { GithubComment, PullRef } from './github-trigger.ts'
-import { observePull, pullsOf, readPull, type Pull } from './github-pull.ts'
+import { observePull, readPull, type Pull } from './github-pull.ts'
 import { health, sourceContext, type Health, type SourceContext } from './host.ts'
 import { isGithubSource } from './instance-id.ts'
 import { KV } from '../kv.ts'
@@ -432,7 +432,7 @@ async function intakeComments(ctx: SourceContext, ref: PullRef, since: string, r
   }
 }
 export async function pollTicketPulls(ctx: SourceContext, signal?: AbortSignal, round = newRound(signal)): Promise<void> {
-  const numbers = [...new Set(ctx.tickets.open().flatMap(ticket => pullsOf(ticket, true)))]
+  const numbers = [...new Set(ctx.tickets.open().flatMap(ticket => sourcePulls(ctx, ticket)))]
   for (const number of numbers) {
     if (stopped(ctx, round)) return
     try {
@@ -440,6 +440,16 @@ export async function pollTicketPulls(ctx: SourceContext, signal?: AbortSignal, 
       if (pr.state !== 'closed' && !pr.merged) await pollChecks(ctx, round, number, pr)
     } catch (error) { if (!stopped(ctx, round)) failed(ctx, round, number, error) }
   }
+}
+/** The PRs of `ticket` that belong to this Source instance: its own followed Threads and its origin Trigger's Threads. */
+function sourcePulls(ctx: SourceContext, ticket: Ticket): number[] {
+  const prefix = `${ctx.id}:`
+  const numbers: number[] = (ticket.follows ?? []).filter((follow: Follow) => follow.thread.startsWith(prefix))
+    .map((follow: Follow) => Number(follow.thread.slice(prefix.length)))
+  // Only a pull-request origin is a PR to read; an Issue origin's Thread is not a pull request.
+  const origin = ctx.triggers.get(ticket.origin.triggerId)
+  if (origin?.source === ctx.id && origin.meta.isPr === true) numbers.push(...origin.threads.filter(thread => thread.source === ctx.id).map(thread => Number(thread.id)))
+  return [...new Set(numbers)].filter(number => Number.isSafeInteger(number) && number > 0)
 }
 /** Polls a PR's CI checks; only changes after the first baseline observation become Triggers. */
 async function pollChecks(ctx: SourceContext, round: Round, number: number, pr: Pull): Promise<void> {

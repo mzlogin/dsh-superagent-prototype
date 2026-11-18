@@ -46,7 +46,7 @@ export function claimPull(ctx: SourceContext, ticketId: string, pr: Pull): strin
     const { login } = ctx.deployment.github
     return `PR does not belong to this ticket: use the source PR or a PR by ${login} from a branch whose last path segment is DSH_SUPERAGENT_NAME; omit pr_number when no PR exists`
   }
-  const owner = ctx.tickets.open().find(item => pullsOf(item, true).includes(pr.number))
+  const owner = ctx.tickets.open().find(item => (item.follows ?? []).some(follow => follow.thread === `${ctx.id}:${pr.number}`))
   if (owner && owner.id !== ticketId) return 'PR already belongs to another active ticket'
   const follow = ticket.follows?.find(item => item.thread === `${ctx.id}:${pr.number}`)
   if (pr.state === 'open' && (!follow || follow.closed || (opened && !follow.own))) bind(ctx, ticketId, pr, opened)
@@ -66,7 +66,9 @@ export async function observePull(ctx: SourceContext, pr: Pull): Promise<boolean
     const ticket = candidates.length === 1 ? candidates[0]! : undefined
     // A PR the ticket followed until it closed, and that is open again, is followed again.
     const reopened = ticket?.follows?.some(item => item.thread === `${ctx.id}:${pr.number}` && item.closed)
-    if (ticket && (reopened || pullsOf(ticket, true).every(number => number === pr.number))) claimPull(ctx, ticket.id, pr)
+    const followed = (ticket?.follows ?? []).filter(item => !item.closed)
+    const only = followed.length === 0 || followed.every(item => item.thread === `${ctx.id}:${pr.number}`)
+    if (ticket && (reopened || only)) claimPull(ctx, ticket.id, pr)
   }
   ctx.threads.describe(`${ctx.id}:${pr.number}`, { facts: { autoMerge: !ended && pr.auto_merge != null ? AUTO_MERGE_ON : null } })
   return ended
@@ -82,7 +84,7 @@ function bind(ctx: SourceContext, ticketId: string, pr: Pull, own: boolean): voi
  * Their subscription to the PR stays so a later human comment there resumes the ticket.
  */
 function closePull(ctx: SourceContext, pr: Pull): void {
-  if (!ctx.tickets.open().some(ticket => pullsOf(ticket, true).includes(pr.number))) return
+  if (!ctx.tickets.open().some(ticket => (ticket.follows ?? []).some(follow => follow.thread === `${ctx.id}:${pr.number}`))) return
   const at = pr.merged_at ?? pr.closed_at ?? new Date().toISOString()
   ctx.tickets.threadClosed({ source: ctx.id, id: String(pr.number) }, pr.merged ? 'merged' : 'closed', at)
 }

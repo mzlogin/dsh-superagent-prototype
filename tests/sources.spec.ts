@@ -8,7 +8,7 @@ import { runFeishu } from '../src/sources/feishu-loops.ts'
 import { commentTrigger, githubAddress, githubChannel, issueTrigger, type GithubComment, type GithubIssue } from '../src/sources/github-trigger.ts'
 import { claimPull, observePull, pullEndNotices, pullOf, ticketBranch, type Pull } from '../src/sources/github-pull.ts'
 import { ciCounts, ciFact, ciSummary } from '../src/sources/github-read.ts'
-import { apply as applyGithub, githubKind, pollFailure, pollRound } from '../src/sources/github.ts'
+import { apply as applyGithub, githubKind, pollFailure, pollRound, pollTicketPulls } from '../src/sources/github.ts'
 import { pollThreads as pollGithubThreads } from '../src/sources/github.ts'
 import { SourceRegistry } from '../src/sources/registry.ts'
 import { cursorAt, POLL_HORIZON_MS } from '../src/sources/poll.ts'
@@ -18,6 +18,7 @@ import { HealthBoard } from '../src/infra/health.ts'
 import { testDeployment } from './fixtures/deployment.ts'
 import { SettingsSchema, settingsPolicy } from '../src/policy.ts'
 import { sourceContextOf, type SourceContextDeps } from '../src/app/source-context.ts'
+import type { SourceContext } from '../src/sources/host.ts'
 import { SetupError, type SetupProblem } from '../src/setup.ts'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -693,6 +694,19 @@ describe('github source', () => {
     expect(h.receive).toHaveBeenCalledWith(expect.objectContaining({ text: 'still broken' }))
     expect(h.store.get('github-since')).toBe('2026-09-08T00:00:00.000Z')
     h.store.close()
+  })
+  it('polls the pull requests of its own tickets only', async () => {
+    // A ticket that follows a PR in another repository must not make this Source read that PR number.
+    const ticket = { ...openTicket('t1'), follows: [{ thread: 'other-repository:9', own: true }] }
+    const ctx = { id: 'github', tickets: { open: () => [ticket] }, triggers: { get: () => undefined },
+      get commands(): never { throw new Error('read a pull request through another repository') } } as unknown as SourceContext
+    await pollTicketPulls(ctx)
+    // An Issue-origin ticket's origin Thread is not a pull request, so it is not read as one.
+    const issueOrigin = { ...openTicket('t2'), follows: [] }
+    const fromIssue = { id: 'github', tickets: { open: () => [issueOrigin] },
+      triggers: { get: () => ({ source: 'github', threads: [{ source: 'github', id: '5' }], meta: { isPr: false } }) },
+      get commands(): never { throw new Error('read an Issue as a pull request') } } as unknown as SourceContext
+    await pollTicketPulls(fromIssue)
   })
   it('takes in the description of a notified PR someone opened since the cursor, as a new PR\'s stream does', async () => {
     const h = host()
