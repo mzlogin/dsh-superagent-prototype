@@ -306,8 +306,8 @@ div.dt-preview-head { color: var(--dsw-alias-label-secondary); }
 .dt-settings-link[data-stage] + .dt-settings-link:not([data-stage]) { margin-top: 10px; }
 .dt-settings-body { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .dt-settings-title { margin: 0; font-size: 15px; line-height: 22px; font-weight: 600; }
-.dt-subtabs { display: flex; gap: 16px; border-bottom: 0.5px solid var(--dsw-alias-border-l3); }
-.dt-subtab { padding: 0 0 6px; border: 0; background: none; color: var(--dsw-alias-label-tertiary); font: inherit; font-size: 13px; cursor: pointer; }
+.dt-subtabs { display: flex; flex-wrap: wrap; gap: 4px 20px; border-bottom: 0.5px solid var(--dsw-alias-border-l3); }
+.dt-subtab { padding: 0 0 6px; border: 0; background: none; color: var(--dsw-alias-label-tertiary); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
 .dt-subtab[aria-selected='true'] { color: var(--dsw-alias-label-primary); font-weight: 500; box-shadow: inset 0 -1.5px 0 var(--dsw-alias-label-primary); }
 .dt-part { display: flex; flex-direction: column; gap: 12px; }
 .dt-rows-summary { text-align: left; color: var(--dsw-alias-label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }

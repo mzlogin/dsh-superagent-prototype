@@ -142,6 +142,14 @@ function PolicyBlock() {
   const parts = sources.filter(source => source.installed && source.policy)
   const [tab, setTab] = useState<string>()
   const current = parts.find(source => source.id === tab) ?? parts[0]
+  // Tabs stay short: the repository name alone when every instance shares an owner, otherwise owner/name.
+  const repositories = parts.map(source => String(source.value.config.repository ?? '')).filter(Boolean)
+  const owners = new Set(repositories.map(repository => repository.split('/')[0]))
+  const tabLabel = (source: typeof parts[number]) => {
+    const repository = String(source.value.config.repository ?? '')
+    if (!repository) return localized(t, source.title)
+    return owners.size > 1 ? repository : repository.split('/').at(-1)!
+  }
   const edit = (next: Partial<typeof policy>) => draft.edit({ ...policy, ...next })
   const toggle = (id: string) => { const next = new Set(expanded); if (next.has(id)) next.delete(id); else next.add(id); setExpanded(next) }
   const insert = (rule: Rule, at: number) => {
@@ -174,9 +182,9 @@ function PolicyBlock() {
       </Section>
       {current && <Section title={t('policyPerSource')} hint={t('policyPerSourceHint')}>
         {parts.length > 1 && <div className="dt-subtabs" role="tablist" aria-label={t('policyPerSource')}>
-          {parts.map(source => <button key={source.id} type="button" role="tab" aria-selected={source === current} className="dt-subtab"
-            onClick={() => setTab(source.id)}>
-            {localized(t, source.title)}
+          {parts.map(source => <button key={source.id} type="button" role="tab" aria-selected={source === current}
+            className="dt-subtab" title={localized(t, source.title)} onClick={() => setTab(source.id)}>
+            {tabLabel(source)}
           </button>)}
         </div>}
         <SourcePart key={current.id} source={current} part={part(current.id)}
