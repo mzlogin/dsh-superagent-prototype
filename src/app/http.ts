@@ -97,10 +97,15 @@ function machineView({ stateDir, promptMaxChars, admissionContextMaxPages, admis
 }
 function setupView(runtime: HttpHost) {
   const resolved = runtime.configured() ? runtime.deployment : undefined
+  // Every GitHub instance names its own repository; the first one is only the worker environment's base.
+  const repositories = runtime.sources.instances().flatMap(instance => {
+    const repository = String((instance.config as Record<string, unknown>).repository ?? '')
+    return runtime.sources.kindOf(instance.id)?.kind === 'github' && repository ? [repository] : []
+  })
   return {
     machine: machineView(runtime.machine), problem: runtime.setupProblem ?? null, feishuProblem: runtime.feishuProblem ?? null,
     problems: runtime.setupProblems,
-    accounts: resolved ? { repository: resolved.repository, agent: resolved.github.login, feishu: resolved.feishu ? { appId: resolved.feishu.appId, brand: resolved.feishu.brand, botId: resolved.feishu.botId, name: resolved.feishu.name } : null } : null,
+    accounts: resolved ? { repository: resolved.repository, repositories, agent: resolved.github.login, feishu: resolved.feishu ? { appId: resolved.feishu.appId, brand: resolved.feishu.brand, botId: resolved.feishu.botId, name: resolved.feishu.name } : null } : null,
   }
 }
 /** Build the `/orchestrator/api/state` response consumed by the management panel and `scripts/dsh-superagent status` (`docs/006-deployment.md`). */
